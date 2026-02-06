@@ -14,3 +14,7 @@ This file stores incremental engineering rules and decisions for this repository
 ## Process Rule
 
 - When a new coding rule is agreed during development, append it here in the relevant section.
+
+## Agent Template Rule
+
+- Agent-oriented generated files should support writing directly to each agent's auto-read directory layout, not only repository docs output.

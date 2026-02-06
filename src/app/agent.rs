@@ -47,6 +47,9 @@ pub(super) struct TemplateConfig {
     pub(super) source: TemplateSource,
     pub(super) repo: String,
     pub(super) git_ref: String,
+    pub(super) output: AgentOutput,
+    pub(super) codex_home: Option<String>,
+    pub(super) claude_dir: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -72,6 +75,9 @@ pub(super) fn run_agent(agent: AgentCommand) -> Result<i32> {
                 source: args.template_source,
                 repo: args.template_repo.clone(),
                 git_ref: args.template_ref.clone(),
+                output: args.agent_output,
+                codex_home: args.codex_home.clone(),
+                claude_dir: args.claude_dir.clone(),
             };
             run_agent_doctor(&args, &config)
         }
@@ -97,12 +103,6 @@ pub(super) fn generate_agent_templates(
             for phase in TEMPLATE_PHASES {
                 let base_path = template_root.join(format!("base/{phase}.md"));
                 let overlay_path = template_root.join(format!("overlays/{slug}/{phase}.md"));
-                let out_path =
-                    PathBuf::from(format!("docs/agents/{slug}/{}/{phase}.md", artifact.output_subdir));
-                if out_path.exists() && !sync {
-                    summary.skipped += 1;
-                    continue;
-                }
                 let base = match fs::read_to_string(&base_path) {
                     Ok(v) => v,
                     Err(err) => {
@@ -124,19 +124,30 @@ pub(super) fn generate_agent_templates(
                 };
 
                 let rendered = render_template(&base, &overlay, &context);
-                if let Some(parent) = out_path.parent()
-                    && let Err(err) = fs::create_dir_all(parent)
-                {
-                    summary.errors += 1;
-                    eprintln!("agent template error creating {}: {err}", parent.display());
-                    continue;
+                let out_paths = output_paths(*agent, *artifact, phase, config);
+                let mut uniq_paths = HashSet::new();
+                for out_path in out_paths {
+                    if !uniq_paths.insert(out_path.clone()) {
+                        continue;
+                    }
+                    if out_path.exists() && !sync {
+                        summary.skipped += 1;
+                        continue;
+                    }
+                    if let Some(parent) = out_path.parent()
+                        && let Err(err) = fs::create_dir_all(parent)
+                    {
+                        summary.errors += 1;
+                        eprintln!("agent template error creating {}: {err}", parent.display());
+                        continue;
+                    }
+                    if let Err(err) = fs::write(&out_path, &rendered) {
+                        summary.errors += 1;
+                        eprintln!("agent template error writing {}: {err}", out_path.display());
+                        continue;
+                    }
+                    summary.written += 1;
                 }
-                if let Err(err) = fs::write(&out_path, rendered) {
-                    summary.errors += 1;
-                    eprintln!("agent template error writing {}: {err}", out_path.display());
-                    continue;
-                }
-                summary.written += 1;
             }
         }
     }
@@ -168,10 +179,7 @@ fn run_agent_doctor(args: &AgentDoctorArgs, config: &TemplateConfig) -> Result<i
                 checked += 1;
                 let base_path = template_root.join(format!("base/{phase}.md"));
                 let overlay_path = template_root.join(format!("overlays/{slug}/{phase}.md"));
-                let out_path = PathBuf::from(format!(
-                    "docs/agents/{slug}/{}/{phase}.md",
-                    artifact.output_subdir
-                ));
+                let out_paths = output_paths(agent, *artifact, phase, config);
 
                 let base = match fs::read_to_string(&base_path) {
                     Ok(v) => v,
@@ -203,30 +211,39 @@ fn run_agent_doctor(args: &AgentDoctorArgs, config: &TemplateConfig) -> Result<i
                     }
                 };
                 let expected = render_template(&base, &overlay, &context);
-                let actual = match fs::read_to_string(&out_path) {
-                    Ok(v) => v,
-                    Err(err) => {
+                let mut uniq_paths = HashSet::new();
+                for out_path in out_paths {
+                    if !uniq_paths.insert(out_path.clone()) {
+                        continue;
+                    }
+                    let actual = match fs::read_to_string(&out_path) {
+                        Ok(v) => v,
+                        Err(err) => {
+                            issues.push(AgentDoctorIssue {
+                                agent: slug.clone(),
+                                artifact: artifact.label.to_string(),
+                                phase: phase.to_string(),
+                                kind: "generated_missing".to_string(),
+                                detail: format!(
+                                    "missing generated file {}: {err}",
+                                    out_path.display()
+                                ),
+                            });
+                            continue;
+                        }
+                    };
+                    if actual != expected {
                         issues.push(AgentDoctorIssue {
                             agent: slug.clone(),
                             artifact: artifact.label.to_string(),
                             phase: phase.to_string(),
-                            kind: "generated_missing".to_string(),
-                            detail: format!("missing generated file {}: {err}", out_path.display()),
+                            kind: "generated_stale".to_string(),
+                            detail: format!(
+                                "generated file differs from template {}",
+                                out_path.display()
+                            ),
                         });
-                        continue;
                     }
-                };
-                if actual != expected {
-                    issues.push(AgentDoctorIssue {
-                        agent: slug.clone(),
-                        artifact: artifact.label.to_string(),
-                        phase: phase.to_string(),
-                        kind: "generated_stale".to_string(),
-                        detail: format!(
-                            "generated file differs from template {}",
-                            out_path.display()
-                        ),
-                    });
                 }
             }
         }
@@ -436,4 +453,62 @@ fn apply_placeholders(text: &str, context: &TemplateContext) -> String {
     text.replace("{{project_name}}", &context.project_name)
         .replace("{{main_spec_id}}", &context.main_spec_id)
         .replace("{{default_depth}}", &context.default_depth)
+}
+
+fn output_paths(
+    agent: AgentTarget,
+    artifact: TemplateArtifact,
+    phase: &str,
+    config: &TemplateConfig,
+) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    if matches!(config.output, AgentOutput::Docs | AgentOutput::Both) {
+        let slug = agent_slug(agent);
+        paths.push(PathBuf::from(format!(
+            "docs/agents/{slug}/{}/{phase}.md",
+            artifact.output_subdir
+        )));
+    }
+    if matches!(config.output, AgentOutput::Install | AgentOutput::Both) {
+        paths.push(install_path(agent, artifact, phase, config));
+    }
+    paths
+}
+
+fn install_path(
+    agent: AgentTarget,
+    artifact: TemplateArtifact,
+    phase: &str,
+    config: &TemplateConfig,
+) -> PathBuf {
+    match agent {
+        AgentTarget::Codex => resolve_codex_home(config)
+            .join(artifact.output_subdir)
+            .join("foundry")
+            .join(format!("{phase}.md")),
+        AgentTarget::Claude => resolve_claude_dir(config)
+            .join(artifact.output_subdir)
+            .join("foundry")
+            .join(format!("{phase}.md")),
+    }
+}
+
+fn resolve_codex_home(config: &TemplateConfig) -> PathBuf {
+    if let Some(path) = config.codex_home.as_ref().filter(|s| !s.trim().is_empty()) {
+        return PathBuf::from(path);
+    }
+    if let Ok(path) = std::env::var("CODEX_HOME") && !path.trim().is_empty() {
+        return PathBuf::from(path);
+    }
+    if let Ok(home) = std::env::var("HOME") && !home.trim().is_empty() {
+        return PathBuf::from(home).join(".codex");
+    }
+    PathBuf::from(".codex")
+}
+
+fn resolve_claude_dir(config: &TemplateConfig) -> PathBuf {
+    if let Some(path) = config.claude_dir.as_ref().filter(|s| !s.trim().is_empty()) {
+        return PathBuf::from(path);
+    }
+    PathBuf::from(".claude")
 }

@@ -4,6 +4,9 @@ pub(super) fn run_init(
     sync: bool,
     agents: &[AgentTarget],
     agent_sync: bool,
+    agent_output: AgentOutput,
+    codex_home: Option<&str>,
+    claude_dir: Option<&str>,
     template_source: TemplateSource,
     template_repo: &str,
     template_ref: &str,
@@ -122,6 +125,9 @@ pub(super) fn run_init(
             source: template_source,
             repo: template_repo.to_string(),
             git_ref: template_ref.to_string(),
+            output: agent_output,
+            codex_home: codex_home.map(ToOwned::to_owned),
+            claude_dir: claude_dir.map(ToOwned::to_owned),
         };
         let agent_summary = super::agent::generate_agent_templates(agents, agent_sync, &config);
         println!(

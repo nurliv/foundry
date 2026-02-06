@@ -70,11 +70,26 @@ Use local templates explicitly (recommended for offline/CI):
 foundry spec init --agent codex --template-source local
 ```
 
+Install into agent auto-read directories (instead of `docs/agents/...`):
+
+```bash
+foundry spec init --agent codex --agent claude --agent-output install
+```
+
+Generate both docs output and install output:
+
+```bash
+foundry spec init --agent codex --agent claude --agent-output both
+```
+
 Template source options:
 
 - `--template-source local|github` (default `github`)
 - `--template-repo <git_url>` (default `https://github.com/nurliv/foundry.git`)
 - `--template-ref <git_ref>` (default `main`)
+- `--agent-output docs|install|both` (default `docs`)
+- `--codex-home <path>` override codex install root (default: `$CODEX_HOME`, then `$HOME/.codex`)
+- `--claude-dir <path>` override claude install root (default: `.claude`)
 - github mode downloads `<repo>/archive/<ref>.tar.gz`, extracts under `.foundry/template-sources/`, and reuses the extracted cache on later runs
 - temporary archive files are deleted after extraction
 - github fetch failure falls back to local `templates/`
@@ -96,6 +111,9 @@ Generated outputs:
 
 - `docs/agents/<agent>/commands/*.md`
 - `docs/agents/<agent>/skills/*.md`
+- install mode:
+- codex: `<codex_home>/{commands|skills}/foundry/*.md`
+- claude: `<claude_dir>/{commands|skills}/foundry/*.md`
 
 Supported placeholders:
 

@@ -25,6 +25,9 @@ Behavior:
 - Use `--sync` to rewrite generated fields (`title`, `hash`, path).
 - Optional: `--agent codex|claude` can be specified multiple times to generate agent command templates.
 - `--agent-sync` overwrites existing generated agent template files.
+- `--agent-output docs|install|both` controls output destination (default `docs`)
+- `--codex-home <path>` overrides codex install root (default `$CODEX_HOME`, then `$HOME/.codex`)
+- `--claude-dir <path>` overrides claude install root (default `.claude`)
 - Template source can be selected with:
 - `--template-source local|github` (default `github`)
 - `--template-repo <git_url>` (default `https://github.com/nurliv/foundry.git`)
@@ -44,6 +47,9 @@ Generated paths (`--agent`):
   `templates/commands/base/*.md` + `templates/commands/overlays/<agent>/*.md`
 - `docs/agents/<agent>/skills/*.md` from
   `templates/skills/base/*.md` + `templates/skills/overlays/<agent>/*.md`
+- install output (`--agent-output install|both`):
+- codex: `<codex_home>/{commands|skills}/foundry/*.md`
+- claude: `<claude_dir>/{commands|skills}/foundry/*.md`
 
 Supported template placeholders:
 
@@ -62,14 +68,19 @@ Examples:
 - `foundry spec agent doctor`
 - `foundry spec agent doctor --agent codex --format json`
 - `foundry spec agent doctor --template-source local --format json`
+- `foundry spec agent doctor --agent-output install --codex-home /tmp/.codex --claude-dir /tmp/.claude`
 
 Rules:
 
 - default agents: `codex`, `claude` when `--agent` is omitted
 - template source options are the same as `spec init`
+- `--agent-output docs|install|both` is supported for destination validation (default `docs`)
 - compares generated files under:
 - `docs/agents/<agent>/commands/*.md`
 - `docs/agents/<agent>/skills/*.md`
+- install mode compares:
+- codex: `<codex_home>/{commands|skills}/foundry/*.md`
+- claude: `<claude_dir>/{commands|skills}/foundry/*.md`
 - with rendered content from matching `templates/{commands|skills}/...` files
 
 Exit codes:

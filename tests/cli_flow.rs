@@ -109,6 +109,61 @@ fn init_with_agents_generates_command_templates() {
 }
 
 #[test]
+fn init_with_agents_install_output_writes_agent_auto_read_dirs() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(spec_dir.join("01-example.md"), "# Example\n\ncontent").expect("write markdown");
+
+    let codex_home = root.join(".test-codex");
+    let claude_dir = root.join(".test-claude");
+    let codex_home_str = codex_home.to_string_lossy().to_string();
+    let claude_dir_str = claude_dir.to_string_lossy().to_string();
+
+    let init = run_foundry(
+        &root,
+        &[
+            "spec",
+            "init",
+            "--sync",
+            "--template-source",
+            "local",
+            "--agent-output",
+            "install",
+            "--codex-home",
+            &codex_home_str,
+            "--claude-dir",
+            &claude_dir_str,
+            "--agent",
+            "codex",
+            "--agent",
+            "claude",
+        ],
+    );
+    assert!(
+        init.status.success(),
+        "init failed: {}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+
+    let codex_cmd = codex_home.join("commands/foundry/spec-plan.md");
+    let codex_skill = codex_home.join("skills/foundry/spec-plan.md");
+    let claude_cmd = claude_dir.join("commands/foundry/spec-plan.md");
+    let claude_skill = claude_dir.join("skills/foundry/spec-plan.md");
+    assert!(codex_cmd.exists(), "missing codex command template");
+    assert!(codex_skill.exists(), "missing codex skill template");
+    assert!(claude_cmd.exists(), "missing claude command template");
+    assert!(claude_skill.exists(), "missing claude skill template");
+
+    let docs_output = root.join("docs/agents/codex/commands/spec-plan.md");
+    assert!(
+        !docs_output.exists(),
+        "docs output should not be created in install-only mode"
+    );
+}
+
+#[test]
 fn init_agent_without_sync_does_not_overwrite_existing_template() {
     let root = tempdir().expect("create temp dir");
     let root = root.path();
