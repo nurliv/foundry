@@ -12,6 +12,7 @@ use crate::cli::*;
 mod agent;
 mod ask;
 mod core;
+mod derive;
 mod impact;
 mod init;
 mod lint;
@@ -21,6 +22,7 @@ mod runtime;
 mod search;
 mod write;
 use core::*;
+use derive::*;
 use impact::*;
 use init::*;
 use lint::*;
@@ -131,7 +133,11 @@ fn run() -> Result<i32> {
                 Ok(0)
             }
             SpecSubcommand::Write(args) => {
-                run_write(&args)?;
+                let _ = run_write(&args)?;
+                Ok(0)
+            }
+            SpecSubcommand::Derive(derive) => {
+                run_derive(derive)?;
                 Ok(0)
             }
             SpecSubcommand::Lint(args) => Ok(run_lint(&args)?),

@@ -156,6 +156,79 @@ fn write_updates_existing_meta_without_losing_edges() {
 }
 
 #[test]
+fn derive_design_creates_design_node_and_refines_edge() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(spec_dir.join("10-spec.md"), "# Auth Spec\n\ncontent").expect("write source spec");
+
+    let init = run_foundry(&root, &["spec", "init", "--sync"]);
+    assert!(init.status.success(), "init failed");
+
+    let derive = run_foundry(
+        &root,
+        &[
+            "spec",
+            "derive",
+            "design",
+            "--from",
+            "SPC-001",
+            "--path",
+            "spec/40-auth-design.md",
+            "--type",
+            "component_design",
+            "--status",
+            "review",
+        ],
+    );
+    assert!(
+        derive.status.success(),
+        "derive failed: {}",
+        String::from_utf8_lossy(&derive.stderr)
+    );
+
+    let design_md = root.join("spec/40-auth-design.md");
+    let design_meta = root.join("spec/40-auth-design.meta.json");
+    assert!(design_md.exists(), "design markdown should exist");
+    assert!(design_meta.exists(), "design meta should exist");
+
+    let meta: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(design_meta).expect("read design meta"))
+            .expect("parse design meta");
+    assert_eq!(meta["type"], "component_design");
+    assert_eq!(meta["status"], "review");
+    let edges = meta["edges"].as_array().expect("edges should be array");
+    assert!(edges.iter().any(|e| {
+        e["to"] == "SPC-001" && e["type"] == "refines" && e["status"] == "confirmed"
+    }));
+}
+
+#[test]
+fn derive_design_fails_when_source_missing() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    fs::create_dir_all(root.join("spec")).expect("create spec dir");
+
+    let derive = run_foundry(
+        &root,
+        &[
+            "spec",
+            "derive",
+            "design",
+            "--from",
+            "SPC-999",
+            "--path",
+            "spec/40-auth-design.md",
+        ],
+    );
+    assert!(
+        !derive.status.success(),
+        "derive should fail for unknown source"
+    );
+}
+
+#[test]
 fn init_with_agents_generates_command_templates() {
     let root = tempdir().expect("create temp dir");
     let root = root.path();

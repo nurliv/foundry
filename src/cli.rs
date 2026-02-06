@@ -23,6 +23,7 @@ pub(crate) struct SpecCommand {
 pub(crate) enum SpecSubcommand {
     Init(InitArgs),
     Write(WriteArgs),
+    Derive(DeriveCommand),
     Lint(LintArgs),
     Link(LinkCommand),
     Impact(ImpactArgs),
@@ -30,6 +31,39 @@ pub(crate) enum SpecSubcommand {
     Agent(AgentCommand),
     Search(SearchCommand),
     Ask(AskArgs),
+}
+
+#[derive(Args, Debug)]
+pub(crate) struct DeriveCommand {
+    #[command(subcommand)]
+    pub(crate) command: DeriveSubcommand,
+}
+
+#[derive(Subcommand, Debug)]
+pub(crate) enum DeriveSubcommand {
+    Design(DeriveDesignArgs),
+}
+
+#[derive(Args, Debug)]
+pub(crate) struct DeriveDesignArgs {
+    #[arg(long)]
+    pub(crate) from: String,
+    #[arg(long)]
+    pub(crate) path: Option<String>,
+    #[arg(long)]
+    pub(crate) title: Option<String>,
+    #[arg(long = "type", default_value = "component_design")]
+    pub(crate) node_type: String,
+    #[arg(long, default_value = "review")]
+    pub(crate) status: String,
+    #[arg(long)]
+    pub(crate) body: Option<String>,
+    #[arg(long)]
+    pub(crate) body_file: Option<String>,
+    #[arg(long, default_value = "derived design from source spec")]
+    pub(crate) rationale: String,
+    #[arg(long = "term")]
+    pub(crate) terms: Vec<String>,
 }
 
 #[derive(Args, Debug)]

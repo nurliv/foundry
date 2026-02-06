@@ -4,6 +4,7 @@
 
 - `foundry spec init`
 - `foundry spec write`
+- `foundry spec derive`
 - `foundry spec lint`
 - `foundry spec link`
 - `foundry spec impact`
@@ -73,6 +74,25 @@ Flags:
 - `--body <markdown>` optional
 - `--body-file <path>` optional
 - `--term <text>` repeatable; if provided, replaces `terms[]`
+
+## `foundry spec derive`
+
+Subcommands:
+
+- `design`: derive or update one design node from a source node
+
+Examples:
+
+- `foundry spec derive design --from SPC-001 --path spec/40-auth-design.md --type component_design --status review`
+- `foundry spec derive design --from SPC-001 --body-file /tmp/design.md`
+
+Rules (`design`):
+
+- `--from` source node id is required and must exist
+- derived node is written through `spec write`
+- when `--path` is omitted, default path is `spec/design-<from-id-lower>.md`
+- generated/updated design node gets a confirmed `refines` edge to source node
+- if `--body` and `--body-file` are omitted, a default design skeleton body is generated
 
 Generated paths (`--agent`):
 

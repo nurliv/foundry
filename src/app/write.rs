@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn run_write(args: &WriteArgs) -> Result<()> {
+pub(super) fn run_write(args: &WriteArgs) -> Result<String> {
     if args.body.is_some() && args.body_file.is_some() {
         anyhow::bail!("--body and --body-file cannot be used together");
     }
@@ -108,7 +108,7 @@ pub(super) fn run_write(args: &WriteArgs) -> Result<()> {
         md_path.display(),
         meta_path.display()
     );
-    Ok(())
+    Ok(meta.id)
 }
 
 fn validate_markdown_path(md_path: &Path) -> Result<()> {
