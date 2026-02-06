@@ -1,4 +1,5 @@
 use super::*;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(super) fn load_existing_ids(spec_root: &Path) -> Result<HashSet<String>> {
     let mut ids = HashSet::new();
@@ -222,4 +223,11 @@ pub(super) fn next_available_id(existing: &HashSet<String>) -> usize {
         .max()
         .unwrap_or(0)
         + 1
+}
+
+pub(super) fn unix_ts() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }

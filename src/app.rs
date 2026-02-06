@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -16,12 +15,14 @@ mod impact;
 mod init;
 mod lint;
 mod link;
+mod runtime;
 mod search;
 use core::*;
 use impact::*;
 use init::*;
 use lint::*;
 use link::*;
+use runtime::*;
 use search::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,61 +79,6 @@ const EDGE_TYPES: &[&str] = &["depends_on", "refines", "conflicts_with", "tests"
 const EDGE_STATUSES: &[&str] = &["confirmed", "proposed"];
 const EMBEDDING_DIM: usize = 256;
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(default)]
-struct RuntimeConfig {
-    ask: AskRuntimeConfig,
-}
-
-impl Default for RuntimeConfig {
-    fn default() -> Self {
-        Self {
-            ask: AskRuntimeConfig::default(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(default)]
-struct AskRuntimeConfig {
-    neighbor_limit: usize,
-    snippet_count_in_answer: usize,
-    edge_weight: AskEdgeWeightConfig,
-}
-
-impl Default for AskRuntimeConfig {
-    fn default() -> Self {
-        Self {
-            neighbor_limit: 5,
-            snippet_count_in_answer: 2,
-            edge_weight: AskEdgeWeightConfig::default(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(default)]
-struct AskEdgeWeightConfig {
-    depends_on: f64,
-    tests: f64,
-    refines: f64,
-    impacts: f64,
-    conflicts_with: f64,
-}
-
-impl Default for AskEdgeWeightConfig {
-    fn default() -> Self {
-        Self {
-            depends_on: 1.0,
-            tests: 0.8,
-            refines: 0.7,
-            impacts: 0.6,
-            conflicts_with: 1.2,
-        }
-    }
-}
-
-
 pub fn run_main() {
     match run() {
         Ok(exit_code) => std::process::exit(exit_code),
@@ -170,22 +116,6 @@ fn run() -> Result<i32> {
             }
         },
     }
-}
-
-fn load_runtime_config() -> RuntimeConfig {
-    let path = Path::new(".foundry/config.json");
-    let raw = match fs::read_to_string(path) {
-        Ok(v) => v,
-        Err(_) => return RuntimeConfig::default(),
-    };
-    serde_json::from_str::<RuntimeConfig>(&raw).unwrap_or_default()
-}
-
-fn unix_ts() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
 }
 
 #[cfg(test)]
