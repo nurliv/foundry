@@ -62,3 +62,13 @@ Done definition:
 Done definition:
 
 - ask JSON output matches the documented schema structure for required fields.
+
+## Milestone 7: Task Planning from Graph (MVP+)
+
+- implement `spec plan ready` to list immediately executable task nodes
+- implement `spec plan batches` to output parallel execution layers
+- treat task dependencies as `depends_on` edges between task node types
+
+Done definition:
+
+- planning commands produce stable table/json outputs that can be consumed by agents.

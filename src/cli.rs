@@ -25,6 +25,7 @@ pub(crate) enum SpecSubcommand {
     Lint(LintArgs),
     Link(LinkCommand),
     Impact(ImpactArgs),
+    Plan(PlanCommand),
     Search(SearchCommand),
     Ask(AskArgs),
 }
@@ -58,6 +59,36 @@ pub(crate) struct ImpactArgs {
 
 #[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ImpactFormat {
+    Table,
+    Json,
+}
+
+#[derive(Args, Debug)]
+pub(crate) struct PlanCommand {
+    #[command(subcommand)]
+    pub(crate) command: PlanSubcommand,
+}
+
+#[derive(Subcommand, Debug)]
+pub(crate) enum PlanSubcommand {
+    Ready(PlanReadyArgs),
+    Batches(PlanBatchesArgs),
+}
+
+#[derive(Args, Debug)]
+pub(crate) struct PlanReadyArgs {
+    #[arg(long, value_enum, default_value_t = PlanFormat::Table)]
+    pub(crate) format: PlanFormat,
+}
+
+#[derive(Args, Debug)]
+pub(crate) struct PlanBatchesArgs {
+    #[arg(long, value_enum, default_value_t = PlanFormat::Table)]
+    pub(crate) format: PlanFormat,
+}
+
+#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlanFormat {
     Table,
     Json,
 }

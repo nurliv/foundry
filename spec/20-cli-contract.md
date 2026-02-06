@@ -6,6 +6,7 @@
 - `foundry spec lint`
 - `foundry spec link`
 - `foundry spec impact`
+- `foundry spec plan`
 - `foundry spec search`
 - `foundry spec ask`
 
@@ -105,6 +106,41 @@ Flags:
 Notes:
 
 - `--depth` limits traversal distance for `reverse_dependents`, `test_coverage_chain`, and `recommended_review_order`.
+
+## `foundry spec plan`
+
+Purpose:
+
+- derive executable task queues from task dependency edges
+- identify tasks ready for immediate execution
+- group independent tasks into parallel batches
+
+Subcommands:
+
+- `ready`: list task nodes without unresolved task dependencies
+- `batches`: compute layered parallel execution batches
+
+Rules:
+
+- task node types: `implementation_task`, `test_task`, `migration_task`
+- dependency edge considered for planning: `depends_on` to another task node
+- done statuses: `done`, `archived`, `deprecated`
+
+Examples:
+
+- `foundry spec plan ready --format table`
+- `foundry spec plan ready --format json`
+- `foundry spec plan batches --format json`
+
+Output fields (`ready --format json`):
+
+- `ready[]` (`id`, `title`, `status`)
+- `blocked[]` (`id`, `title`, `status`, `blocked_by[]`)
+
+Output fields (`batches --format json`):
+
+- `batches[]` (`batch`, `task_ids[]`)
+- `blocked_or_cyclic[]`
 
 ## `foundry spec search`
 

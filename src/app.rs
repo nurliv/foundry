@@ -15,6 +15,7 @@ mod impact;
 mod init;
 mod lint;
 mod link;
+mod plan;
 mod runtime;
 mod search;
 use core::*;
@@ -22,6 +23,7 @@ use impact::*;
 use init::*;
 use lint::*;
 use link::*;
+use plan::*;
 use runtime::*;
 use search::*;
 
@@ -72,9 +74,27 @@ const NODE_TYPES: &[&str] = &[
     "api_contract",
     "data_contract",
     "test_spec",
+    "architecture",
+    "component_design",
+    "api_design",
+    "data_design",
+    "adr",
+    "implementation_task",
+    "test_task",
+    "migration_task",
 ];
 
-const NODE_STATUSES: &[&str] = &["draft", "review", "active", "deprecated", "archived"];
+const NODE_STATUSES: &[&str] = &[
+    "draft",
+    "review",
+    "active",
+    "deprecated",
+    "archived",
+    "todo",
+    "doing",
+    "done",
+    "blocked",
+];
 const EDGE_TYPES: &[&str] = &["depends_on", "refines", "conflicts_with", "tests", "impacts"];
 const EDGE_STATUSES: &[&str] = &["confirmed", "proposed"];
 const EMBEDDING_DIM: usize = 256;
@@ -104,6 +124,10 @@ fn run() -> Result<i32> {
             }
             SpecSubcommand::Impact(args) => {
                 run_impact(&args)?;
+                Ok(0)
+            }
+            SpecSubcommand::Plan(plan) => {
+                run_plan(plan)?;
                 Ok(0)
             }
             SpecSubcommand::Search(search) => {

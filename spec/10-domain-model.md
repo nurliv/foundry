@@ -31,6 +31,14 @@ Markdown remains the human-facing source. Metadata tracks machine-usable structu
 - `api_contract`
 - `data_contract`
 - `test_spec`
+- `architecture`
+- `component_design`
+- `api_design`
+- `data_design`
+- `adr`
+- `implementation_task`
+- `test_task`
+- `migration_task`
 
 ### Node Status
 
@@ -39,6 +47,10 @@ Markdown remains the human-facing source. Metadata tracks machine-usable structu
 - `active`
 - `deprecated`
 - `archived`
+- `todo`
+- `doing`
+- `done`
+- `blocked`
 
 ## Edge
 

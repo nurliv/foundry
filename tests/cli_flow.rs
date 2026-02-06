@@ -745,3 +745,161 @@ fn ask_explain_returns_reason_entries() {
         "expected weighted edge hints in explanations: {reason_text}"
     );
 }
+
+#[test]
+fn plan_ready_reports_ready_and_blocked_tasks() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(spec_dir.join("t1.md"), "# Task 1").expect("write t1");
+    fs::write(spec_dir.join("t2.md"), "# Task 2").expect("write t2");
+    fs::write(spec_dir.join("t3.md"), "# Task 3").expect("write t3");
+
+    let init = run_foundry(&root, &["spec", "init", "--sync"]);
+    assert!(init.status.success(), "init failed");
+
+    let mut t1: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(spec_dir.join("t1.meta.json")).expect("read t1"))
+            .expect("parse t1");
+    let mut t2: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(spec_dir.join("t2.meta.json")).expect("read t2"))
+            .expect("parse t2");
+    let mut t3: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(spec_dir.join("t3.meta.json")).expect("read t3"))
+            .expect("parse t3");
+    t1["type"] = serde_json::json!("implementation_task");
+    t2["type"] = serde_json::json!("implementation_task");
+    t3["type"] = serde_json::json!("implementation_task");
+    t1["status"] = serde_json::json!("done");
+    t2["status"] = serde_json::json!("todo");
+    t3["status"] = serde_json::json!("todo");
+    t2["edges"] = serde_json::json!([
+      {
+        "to": "SPC-001",
+        "type": "depends_on",
+        "rationale": "needs task1",
+        "confidence": 1.0,
+        "status": "confirmed"
+      }
+    ]);
+    t3["edges"] = serde_json::json!([
+      {
+        "to": "SPC-002",
+        "type": "depends_on",
+        "rationale": "needs task2",
+        "confidence": 1.0,
+        "status": "confirmed"
+      }
+    ]);
+    fs::write(
+        spec_dir.join("t1.meta.json"),
+        serde_json::to_string_pretty(&t1).expect("serialize t1") + "\n",
+    )
+    .expect("write t1");
+    fs::write(
+        spec_dir.join("t2.meta.json"),
+        serde_json::to_string_pretty(&t2).expect("serialize t2") + "\n",
+    )
+    .expect("write t2");
+    fs::write(
+        spec_dir.join("t3.meta.json"),
+        serde_json::to_string_pretty(&t3).expect("serialize t3") + "\n",
+    )
+    .expect("write t3");
+
+    let out = run_foundry(&root, &["spec", "plan", "ready", "--format", "json"]);
+    assert!(out.status.success(), "plan ready failed");
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).expect("parse output");
+    let ready = json["ready"].as_array().expect("ready array");
+    let blocked = json["blocked"].as_array().expect("blocked array");
+    assert_eq!(ready.len(), 1);
+    assert_eq!(ready[0]["id"], "SPC-002");
+    assert_eq!(blocked.len(), 1);
+    assert_eq!(blocked[0]["id"], "SPC-003");
+    assert_eq!(blocked[0]["blocked_by"][0], "SPC-002");
+}
+
+#[test]
+fn plan_batches_groups_parallel_tasks() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(spec_dir.join("a.md"), "# A").expect("write a");
+    fs::write(spec_dir.join("b.md"), "# B").expect("write b");
+    fs::write(spec_dir.join("c.md"), "# C").expect("write c");
+    fs::write(spec_dir.join("d.md"), "# D").expect("write d");
+
+    let init = run_foundry(&root, &["spec", "init", "--sync"]);
+    assert!(init.status.success(), "init failed");
+
+    let mut a: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(spec_dir.join("a.meta.json")).expect("read a"))
+            .expect("parse a");
+    let mut b: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(spec_dir.join("b.meta.json")).expect("read b"))
+            .expect("parse b");
+    let mut c: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(spec_dir.join("c.meta.json")).expect("read c"))
+            .expect("parse c");
+    let mut d: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(spec_dir.join("d.meta.json")).expect("read d"))
+            .expect("parse d");
+    for meta in [&mut a, &mut b, &mut c, &mut d] {
+        meta["type"] = serde_json::json!("implementation_task");
+        meta["status"] = serde_json::json!("todo");
+    }
+    c["edges"] = serde_json::json!([
+      {
+        "to": "SPC-001",
+        "type": "depends_on",
+        "rationale": "c needs a",
+        "confidence": 1.0,
+        "status": "confirmed"
+      }
+    ]);
+    d["edges"] = serde_json::json!([
+      {
+        "to": "SPC-002",
+        "type": "depends_on",
+        "rationale": "d needs b",
+        "confidence": 1.0,
+        "status": "confirmed"
+      }
+    ]);
+    fs::write(
+        spec_dir.join("a.meta.json"),
+        serde_json::to_string_pretty(&a).expect("serialize a") + "\n",
+    )
+    .expect("write a");
+    fs::write(
+        spec_dir.join("b.meta.json"),
+        serde_json::to_string_pretty(&b).expect("serialize b") + "\n",
+    )
+    .expect("write b");
+    fs::write(
+        spec_dir.join("c.meta.json"),
+        serde_json::to_string_pretty(&c).expect("serialize c") + "\n",
+    )
+    .expect("write c");
+    fs::write(
+        spec_dir.join("d.meta.json"),
+        serde_json::to_string_pretty(&d).expect("serialize d") + "\n",
+    )
+    .expect("write d");
+
+    let out = run_foundry(&root, &["spec", "plan", "batches", "--format", "json"]);
+    assert!(out.status.success(), "plan batches failed");
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).expect("parse output");
+    let batches = json["batches"].as_array().expect("batches array");
+    assert_eq!(batches.len(), 2);
+    let b1 = batches[0]["task_ids"].as_array().expect("batch1 ids");
+    let b2 = batches[1]["task_ids"].as_array().expect("batch2 ids");
+    assert_eq!(b1.len(), 2);
+    assert_eq!(b2.len(), 2);
+    assert!(json["blocked_or_cyclic"]
+        .as_array()
+        .expect("blocked_or_cyclic")
+        .is_empty());
+}
