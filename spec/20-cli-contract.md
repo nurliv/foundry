@@ -156,6 +156,7 @@ Supported template placeholders:
 - `{{default_depth}}`: default impact traversal depth (`2`)
 - implement / impl-review command templates should include `spec write --id <TASK-ID> --status ...` examples for task state transitions
 - design / task-breakdown command templates should include `spec derive design` / `spec derive tasks` as primary generation path
+- codex command overlays should include `<meta>` with `user-directive: $ARGUMENTS` for prompt argument passthrough
 
 ## `foundry spec agent`
 

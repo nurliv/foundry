@@ -625,6 +625,8 @@ fn init_with_agents_generates_command_templates() {
         fs::read_to_string(codex_task_breakdown).expect("read codex task-breakdown template");
     assert!(codex_text.contains("# spec-plan"));
     assert!(codex_text.contains("Codex Overlay: spec-plan"));
+    assert!(codex_text.starts_with("<meta>"));
+    assert!(codex_text.contains("user-directive: $ARGUMENTS"));
     assert!(claude_text.contains("Claude Overlay: spec-plan"));
     assert!(codex_skill_text.contains("Codex Skill Overlay: spec-plan"));
     assert!(claude_skill_text.contains("Claude Skill Overlay: spec-plan"));

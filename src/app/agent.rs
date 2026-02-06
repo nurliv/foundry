@@ -123,7 +123,7 @@ pub(super) fn generate_agent_templates(
                     }
                 };
 
-                let rendered = render_template(&base, &overlay, &context);
+                let rendered = render_template(*agent, *artifact, &base, &overlay, &context);
                 let out_paths = output_paths(*agent, *artifact, phase, config);
                 let mut uniq_paths = HashSet::new();
                 for out_path in out_paths {
@@ -210,7 +210,7 @@ fn run_agent_doctor(args: &AgentDoctorArgs, config: &TemplateConfig) -> Result<i
                         continue;
                     }
                 };
-                let expected = render_template(&base, &overlay, &context);
+                let expected = render_template(agent, *artifact, &base, &overlay, &context);
                 let mut uniq_paths = HashSet::new();
                 for out_path in out_paths {
                     if !uniq_paths.insert(out_path.clone()) {
@@ -406,11 +406,24 @@ fn print_agent_doctor_table(output: &AgentDoctorOutput) {
     );
 }
 
-fn render_template(base: &str, overlay: &str, context: &TemplateContext) -> String {
+fn render_template(
+    agent: AgentTarget,
+    artifact: TemplateArtifact,
+    base: &str,
+    overlay: &str,
+    context: &TemplateContext,
+) -> String {
     let mut out = String::new();
-    out.push_str(base.trim_end());
-    out.push_str("\n\n---\n\n");
-    out.push_str(overlay.trim_end());
+    // Codex command prompts require metadata at the file head.
+    if agent == AgentTarget::Codex && artifact.output_subdir == "commands" {
+        out.push_str(overlay.trim_end());
+        out.push_str("\n\n---\n\n");
+        out.push_str(base.trim_end());
+    } else {
+        out.push_str(base.trim_end());
+        out.push_str("\n\n---\n\n");
+        out.push_str(overlay.trim_end());
+    }
     out.push('\n');
     apply_placeholders(&out, context)
 }

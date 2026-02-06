@@ -1,3 +1,10 @@
+<meta>
+description: task breakdown with optional user directive
+argument-hint: <追加指示>
+arguments:
+   user-directive: $ARGUMENTS
+</meta>
+
 # Codex Overlay: task-breakdown
 
 - Prefer direct CLI execution and JSON parsing in the agent loop.
