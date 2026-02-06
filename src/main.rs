@@ -749,3 +749,108 @@ fn bfs_review_order(seed: &str, by_id: &HashMap<String, SpecNodeMeta>) -> Vec<St
 
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn node(id: &str, edges: Vec<SpecEdge>) -> SpecNodeMeta {
+        SpecNodeMeta {
+            id: id.to_string(),
+            node_type: "feature_requirement".to_string(),
+            status: "draft".to_string(),
+            title: id.to_string(),
+            body_md_path: format!("spec/{id}.md"),
+            terms: Vec::new(),
+            hash: "0".repeat(64),
+            edges,
+        }
+    }
+
+    #[test]
+    fn extract_title_uses_heading() {
+        let title = extract_title("# Hello\n\ntext", Path::new("spec/a.md"));
+        assert_eq!(title, "Hello");
+    }
+
+    #[test]
+    fn extract_title_falls_back_to_filename() {
+        let title = extract_title("no heading", Path::new("spec/fallback-name.md"));
+        assert_eq!(title, "fallback-name");
+    }
+
+    #[test]
+    fn md_to_meta_path_converts_suffix() {
+        let path = md_to_meta_path(Path::new("spec/10-domain-model.md")).unwrap();
+        assert_eq!(path, PathBuf::from("spec/10-domain-model.meta.json"));
+    }
+
+    #[test]
+    fn sha256_hex_returns_64_chars() {
+        let hash = sha256_hex(b"hello");
+        assert_eq!(hash.len(), 64);
+        assert_eq!(
+            hash,
+            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        );
+    }
+
+    #[test]
+    fn next_available_id_skips_max() {
+        let ids = HashSet::from([
+            "SPC-001".to_string(),
+            "SPC-003".to_string(),
+            "SPC-010".to_string(),
+        ]);
+        assert_eq!(next_available_id(&ids), 11);
+    }
+
+    #[test]
+    fn bfs_review_order_follows_link_types() {
+        let mut map = HashMap::new();
+        map.insert(
+            "SPC-001".to_string(),
+            node(
+                "SPC-001",
+                vec![
+                    SpecEdge {
+                        to: "SPC-002".to_string(),
+                        edge_type: "depends_on".to_string(),
+                        rationale: "dep".to_string(),
+                        confidence: 1.0,
+                        status: "confirmed".to_string(),
+                    },
+                    SpecEdge {
+                        to: "SPC-004".to_string(),
+                        edge_type: "conflicts_with".to_string(),
+                        rationale: "conflict".to_string(),
+                        confidence: 1.0,
+                        status: "confirmed".to_string(),
+                    },
+                ],
+            ),
+        );
+        map.insert("SPC-002".to_string(), node("SPC-002", Vec::new()));
+        map.insert(
+            "SPC-003".to_string(),
+            node(
+                "SPC-003",
+                vec![SpecEdge {
+                    to: "SPC-001".to_string(),
+                    edge_type: "tests".to_string(),
+                    rationale: "test".to_string(),
+                    confidence: 1.0,
+                    status: "confirmed".to_string(),
+                }],
+            ),
+        );
+        map.insert("SPC-004".to_string(), node("SPC-004", Vec::new()));
+
+        let order = bfs_review_order("SPC-001", &map);
+
+        assert!(order.contains(&"SPC-001".to_string()));
+        assert!(order.contains(&"SPC-002".to_string()));
+        assert!(order.contains(&"SPC-003".to_string()));
+        assert!(!order.contains(&"SPC-004".to_string()));
+    }
+}
