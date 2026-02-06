@@ -940,12 +940,19 @@ fn run_ask(args: &AskArgs) -> Result<()> {
     let conn = open_search_db()?;
     ensure_search_schema_readonly(&conn)?;
     let hits = build_search_hits(&conn, &args.question, args.top_k, args.mode)?;
+    let spec_root = Path::new("spec");
+    let mut lint = LintState::default();
+    let metas = load_all_meta(spec_root, &mut lint)?;
+    let mut meta_by_id = HashMap::<String, SpecNodeMeta>::new();
+    for (_, meta) in metas {
+        meta_by_id.insert(meta.id.clone(), meta);
+    }
     let mode = match args.mode {
         SearchMode::Lexical => "lexical",
         SearchMode::Hybrid => "hybrid",
     }
     .to_string();
-    let output = synthesize_ask_output(args, mode, hits);
+    let output = synthesize_ask_output(args, mode, hits, &meta_by_id);
     match args.format {
         AskFormat::Json => println!("{}", serde_json::to_string_pretty(&output)?),
         AskFormat::Table => print_ask_table(&output),
@@ -1705,7 +1712,12 @@ fn print_search_table(output: &SearchQueryOutput) {
     }
 }
 
-fn synthesize_ask_output(args: &AskArgs, mode: String, hits: Vec<SearchHit>) -> AskOutput {
+fn synthesize_ask_output(
+    args: &AskArgs,
+    mode: String,
+    hits: Vec<SearchHit>,
+    meta_by_id: &HashMap<String, SpecNodeMeta>,
+) -> AskOutput {
     if hits.is_empty() {
         return AskOutput {
             question: args.question.clone(),
@@ -1721,7 +1733,9 @@ fn synthesize_ask_output(args: &AskArgs, mode: String, hits: Vec<SearchHit>) -> 
         };
     }
 
-    let citations = hits
+    let (related_ids, conflict_risks) = expand_ask_context(&hits, meta_by_id, 5);
+    let primary_ids = hits.iter().map(|h| h.id.clone()).collect::<HashSet<_>>();
+    let mut citations = hits
         .iter()
         .map(|hit| AskCitation {
             id: hit.id.clone(),
@@ -1729,6 +1743,19 @@ fn synthesize_ask_output(args: &AskArgs, mode: String, hits: Vec<SearchHit>) -> 
             path: hit.path.clone(),
         })
         .collect::<Vec<_>>();
+    for related_id in &related_ids {
+        if primary_ids.contains(related_id) {
+            continue;
+        }
+        if let Some(meta) = meta_by_id.get(related_id) {
+            citations.push(AskCitation {
+                id: meta.id.clone(),
+                title: meta.title.clone(),
+                path: meta.body_md_path.clone(),
+            });
+        }
+    }
+
     let evidence = hits
         .iter()
         .map(|hit| AskEvidence {
@@ -1736,19 +1763,56 @@ fn synthesize_ask_output(args: &AskArgs, mode: String, hits: Vec<SearchHit>) -> 
             snippet: hit.snippet.clone(),
             score: hit.score,
         })
+        .chain(related_ids.iter().filter_map(|id| {
+            if primary_ids.contains(id) {
+                return None;
+            }
+            meta_by_id.get(id).map(|meta| AskEvidence {
+                id: meta.id.clone(),
+                snippet: markdown_head_snippet(&meta.body_md_path, 220),
+                score: 0.0,
+            })
+        }))
         .collect::<Vec<_>>();
 
-    let focus_titles = hits
+    let focus_titles = citations
         .iter()
         .take(3)
         .map(|h| format!("{} ({})", h.title, h.id))
         .collect::<Vec<_>>()
         .join(", ");
     let top_score = hits.first().map(|h| h.score).unwrap_or(0.0);
-    let confidence = confidence_from_hits(top_score, hits.len());
+    let confidence = confidence_from_hits(top_score, hits.len(), conflict_risks.is_empty());
+
+    let related_summary = if related_ids.is_empty() {
+        "No adjacent dependency/test nodes were found.".to_string()
+    } else {
+        format!(
+            "Related context nodes: {}.",
+            related_ids
+                .iter()
+                .take(5)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
+    let risk_summary = if conflict_risks.is_empty() {
+        "No direct conflict edges were detected in the 1-hop context.".to_string()
+    } else {
+        format!("Conflict risks to review: {}.", conflict_risks.join(", "))
+    };
     let answer = format!(
-        "Relevant specs were found. Start review from: {focus_titles}. Use the cited snippets as evidence and validate downstream impacts via `spec impact` for the top node."
+        "Primary relevant specs: {focus_titles}. {related_summary} {risk_summary} Use `spec impact <ID>` on the first cited node for deeper propagation checks."
     );
+
+    let mut gaps = Vec::new();
+    if hits.len() < 2 {
+        gaps.push("Low evidence count: fewer than 2 strong retrieval hits.".to_string());
+    }
+    if citations.len() <= 1 {
+        gaps.push("Limited cross-spec context: consider adding more explicit links.".to_string());
+    }
 
     AskOutput {
         question: args.question.clone(),
@@ -1757,17 +1821,22 @@ fn synthesize_ask_output(args: &AskArgs, mode: String, hits: Vec<SearchHit>) -> 
         confidence,
         citations,
         evidence,
-        gaps: Vec::new(),
+        gaps,
     }
 }
 
-fn confidence_from_hits(top_score: f64, hit_count: usize) -> f64 {
+fn confidence_from_hits(top_score: f64, hit_count: usize, no_conflict_risk: bool) -> f64 {
     if hit_count == 0 {
         return 0.0;
     }
-    let score_signal = top_score.abs().min(1.0);
+    let score_signal = if top_score <= 1.0 {
+        (top_score.abs() * 30.0).min(1.0)
+    } else {
+        top_score.abs().min(1.0)
+    };
     let coverage_signal = (hit_count as f64 / 5.0).min(1.0);
-    ((score_signal * 0.6) + (coverage_signal * 0.4)).min(1.0)
+    let risk_signal = if no_conflict_risk { 1.0 } else { 0.6 };
+    ((score_signal * 0.5) + (coverage_signal * 0.35) + (risk_signal * 0.15)).min(1.0)
 }
 
 fn print_ask_table(output: &AskOutput) {
@@ -1796,6 +1865,69 @@ fn print_ask_table(output: &AskOutput) {
         for gap in &output.gaps {
             println!("  - {gap}");
         }
+    }
+}
+
+fn expand_ask_context(
+    hits: &[SearchHit],
+    meta_by_id: &HashMap<String, SpecNodeMeta>,
+    limit: usize,
+) -> (Vec<String>, Vec<String>) {
+    let seed_ids = hits.iter().map(|h| h.id.clone()).collect::<HashSet<_>>();
+    let mut related = BTreeSet::new();
+    let mut conflicts = BTreeSet::new();
+
+    for seed_id in &seed_ids {
+        if let Some(meta) = meta_by_id.get(seed_id) {
+            for edge in &meta.edges {
+                match edge.edge_type.as_str() {
+                    "depends_on" | "tests" | "refines" | "impacts" => {
+                        related.insert(edge.to.clone());
+                    }
+                    "conflicts_with" => {
+                        related.insert(edge.to.clone());
+                        conflicts.insert(edge.to.clone());
+                    }
+                    _ => {}
+                }
+            }
+        }
+        for (id, candidate) in meta_by_id {
+            for edge in &candidate.edges {
+                if edge.to != *seed_id {
+                    continue;
+                }
+                match edge.edge_type.as_str() {
+                    "depends_on" | "tests" | "refines" | "impacts" => {
+                        related.insert(id.clone());
+                    }
+                    "conflicts_with" => {
+                        related.insert(id.clone());
+                        conflicts.insert(id.clone());
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    for seed in &seed_ids {
+        related.remove(seed);
+        conflicts.remove(seed);
+    }
+    let related_vec = related.into_iter().take(limit).collect::<Vec<_>>();
+    let conflict_vec = conflicts.into_iter().take(limit).collect::<Vec<_>>();
+    (related_vec, conflict_vec)
+}
+
+fn markdown_head_snippet(path: &str, max_len: usize) -> String {
+    match fs::read_to_string(path) {
+        Ok(text) => text
+            .chars()
+            .take(max_len)
+            .collect::<String>()
+            .replace('\n', " "),
+        Err(_) => "(snippet unavailable)".to_string(),
     }
 }
 
@@ -2488,5 +2620,70 @@ mod tests {
     fn normalize_query_for_fts_removes_punctuation() {
         let normalized = normalize_query_for_fts("How does auth-flow work?");
         assert_eq!(normalized, "how does auth flow work");
+    }
+
+    #[test]
+    fn expand_ask_context_collects_neighbors_and_conflicts() {
+        let mut map = HashMap::new();
+        map.insert(
+            "SPC-001".to_string(),
+            SpecNodeMeta {
+                id: "SPC-001".to_string(),
+                node_type: "feature_requirement".to_string(),
+                status: "active".to_string(),
+                title: "A".to_string(),
+                body_md_path: "spec/a.md".to_string(),
+                terms: vec![],
+                hash: "0".repeat(64),
+                edges: vec![
+                    SpecEdge {
+                        to: "SPC-002".to_string(),
+                        edge_type: "depends_on".to_string(),
+                        rationale: "dep".to_string(),
+                        confidence: 1.0,
+                        status: "confirmed".to_string(),
+                    },
+                    SpecEdge {
+                        to: "SPC-003".to_string(),
+                        edge_type: "conflicts_with".to_string(),
+                        rationale: "risk".to_string(),
+                        confidence: 1.0,
+                        status: "confirmed".to_string(),
+                    },
+                ],
+            },
+        );
+        map.insert(
+            "SPC-004".to_string(),
+            SpecNodeMeta {
+                id: "SPC-004".to_string(),
+                node_type: "feature_requirement".to_string(),
+                status: "active".to_string(),
+                title: "B".to_string(),
+                body_md_path: "spec/b.md".to_string(),
+                terms: vec![],
+                hash: "0".repeat(64),
+                edges: vec![SpecEdge {
+                    to: "SPC-001".to_string(),
+                    edge_type: "tests".to_string(),
+                    rationale: "test".to_string(),
+                    confidence: 1.0,
+                    status: "confirmed".to_string(),
+                }],
+            },
+        );
+        let hits = vec![SearchHit {
+            id: "SPC-001".to_string(),
+            title: "A".to_string(),
+            path: "spec/a.md".to_string(),
+            score: 0.5,
+            matched_terms: vec![],
+            snippet: "x".to_string(),
+        }];
+        let (related, conflicts) = expand_ask_context(&hits, &map, 10);
+        assert!(related.contains(&"SPC-002".to_string()));
+        assert!(related.contains(&"SPC-003".to_string()));
+        assert!(related.contains(&"SPC-004".to_string()));
+        assert!(conflicts.contains(&"SPC-003".to_string()));
     }
 }

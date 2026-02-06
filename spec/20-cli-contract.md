@@ -127,6 +127,7 @@ Purpose:
 
 - provide retrieval-augmented, citation-first answers for AI agents and reviewers
 - return machine-readable evidence that can be interpreted by external agents
+- expand 1-hop graph neighbors from top hits (depends/tests/refines/impacts/conflicts) for context and risk surfacing
 
 Usage:
 

@@ -521,3 +521,63 @@ fn ask_reports_gap_when_no_hit() {
     assert_eq!(output["confidence"], 0.0);
     assert!(output["gaps"].as_array().is_some_and(|a| !a.is_empty()));
 }
+
+#[test]
+fn ask_includes_neighbor_citations_from_graph_edges() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(
+        spec_dir.join("a.md"),
+        "# Login Spec\n\nLogin flow with token validation.",
+    )
+    .expect("write a");
+    fs::write(
+        spec_dir.join("b.md"),
+        "# Session Dependency\n\nSession lifecycle requirements.",
+    )
+    .expect("write b");
+
+    let init = run_foundry(&root, &["spec", "init", "--sync"]);
+    assert!(init.status.success(), "init failed");
+    let add = run_foundry(
+        &root,
+        &[
+            "spec",
+            "link",
+            "add",
+            "--from",
+            "SPC-001",
+            "--to",
+            "SPC-002",
+            "--type",
+            "depends_on",
+            "--rationale",
+            "login depends on session",
+        ],
+    );
+    assert!(add.status.success(), "link add failed");
+    let index = run_foundry(&root, &["spec", "search", "index", "--rebuild"]);
+    assert!(index.status.success(), "index failed");
+
+    let ask = run_foundry(
+        &root,
+        &["spec", "ask", "login flow", "--format", "json", "--top-k", "1"],
+    );
+    assert!(
+        ask.status.success(),
+        "ask failed:\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&ask.stdout),
+        String::from_utf8_lossy(&ask.stderr)
+    );
+    let output: serde_json::Value =
+        serde_json::from_slice(&ask.stdout).expect("parse ask output");
+    let citations = output["citations"].as_array().expect("citations array");
+    let ids = citations
+        .iter()
+        .filter_map(|v| v["id"].as_str().map(ToString::to_string))
+        .collect::<Vec<_>>();
+    assert!(ids.contains(&"SPC-001".to_string()));
+    assert!(ids.contains(&"SPC-002".to_string()));
+}
