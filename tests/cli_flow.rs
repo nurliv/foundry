@@ -647,4 +647,8 @@ fn ask_explain_returns_reason_entries() {
         reason_text.contains("token match"),
         "expected token match in explanations: {reason_text}"
     );
+    assert!(
+        reason_text.contains("w=") || reason_text.contains("weighted_score="),
+        "expected weighted edge hints in explanations: {reason_text}"
+    );
 }

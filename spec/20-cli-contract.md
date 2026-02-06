@@ -148,6 +148,7 @@ Output fields (`--format json`):
 - `evidence[]` (`id`, `snippet`, `score`)
 - `explanations[]` (`id`, `reason`) when `--explain` is enabled
 - reason includes retrieval rank/score and token-level match hints (title/snippet) when available
+- graph-neighbor reasons include edge-weight contribution hints (for configured `ask.edge_weight.*`)
 - `gaps[]` (empty if enough evidence exists)
 
 Runtime tuning:

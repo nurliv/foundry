@@ -1895,7 +1895,13 @@ fn synthesize_ask_output(
     }
 
     let explanations = if args.explain {
-        build_ask_explanations(&args.question, &hits, &related_ids, meta_by_id)
+        build_ask_explanations(
+            &args.question,
+            &hits,
+            &related_ids,
+            meta_by_id,
+            &config.edge_weight,
+        )
     } else {
         Vec::new()
     };
@@ -1966,6 +1972,7 @@ fn build_ask_explanations(
     hits: &[SearchHit],
     related_ids: &[String],
     meta_by_id: &HashMap<String, SpecNodeMeta>,
+    weights: &AskEdgeWeightConfig,
 ) -> Vec<AskExplanation> {
     let mut out = Vec::new();
     let primary_ids = hits.iter().map(|h| h.id.clone()).collect::<HashSet<_>>();
@@ -1996,13 +2003,25 @@ fn build_ask_explanations(
         if primary_ids.contains(related) {
             continue;
         }
-        let edge_reasons = edge_reasons_to_primary(related, &primary_ids, meta_by_id);
+        let edge_reasons = edge_reasons_to_primary(related, &primary_ids, meta_by_id, weights);
         if edge_reasons.is_empty() {
             continue;
         }
+        let weighted_total = edge_reasons
+            .iter()
+            .map(|e| e.weighted_contribution)
+            .sum::<f64>();
         out.push(AskExplanation {
             id: related.clone(),
-            reason: format!("graph neighbor via {}", edge_reasons.join(", ")),
+            reason: format!(
+                "graph neighbor via {} (weighted_score={:.2})",
+                edge_reasons
+                    .iter()
+                    .map(|e| e.label.clone())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                weighted_total
+            ),
         });
     }
     out
@@ -2022,12 +2041,21 @@ fn edge_reasons_to_primary(
     candidate_id: &str,
     primary_ids: &HashSet<String>,
     meta_by_id: &HashMap<String, SpecNodeMeta>,
-) -> Vec<String> {
-    let mut reasons = BTreeSet::new();
+    weights: &AskEdgeWeightConfig,
+) -> Vec<WeightedEdgeReason> {
+    let mut reasons = HashMap::<String, WeightedEdgeReason>::new();
     if let Some(meta) = meta_by_id.get(candidate_id) {
         for edge in &meta.edges {
             if primary_ids.contains(&edge.to) {
-                reasons.insert(format!("{} -> {} ({})", candidate_id, edge.to, edge.edge_type));
+                let weight = edge_weight(edge.edge_type.as_str(), weights);
+                let label = format!(
+                    "{} -> {} ({},w={:.2})",
+                    candidate_id, edge.to, edge.edge_type, weight
+                );
+                reasons.entry(label.clone()).or_insert(WeightedEdgeReason {
+                    label,
+                    weighted_contribution: weight,
+                });
             }
         }
     }
@@ -2035,12 +2063,32 @@ fn edge_reasons_to_primary(
         if let Some(primary) = meta_by_id.get(primary_id) {
             for edge in &primary.edges {
                 if edge.to == candidate_id {
-                    reasons.insert(format!("{} -> {} ({})", primary_id, candidate_id, edge.edge_type));
+                    let weight = edge_weight(edge.edge_type.as_str(), weights) * 0.9;
+                    let label = format!(
+                        "{} -> {} ({},w={:.2})",
+                        primary_id, candidate_id, edge.edge_type, weight
+                    );
+                    reasons.entry(label.clone()).or_insert(WeightedEdgeReason {
+                        label,
+                        weighted_contribution: weight,
+                    });
                 }
             }
         }
     }
-    reasons.into_iter().collect()
+    let mut out = reasons.into_values().collect::<Vec<_>>();
+    out.sort_by(|a, b| {
+        b.weighted_contribution
+            .total_cmp(&a.weighted_contribution)
+            .then(a.label.cmp(&b.label))
+    });
+    out
+}
+
+#[derive(Debug, Clone)]
+struct WeightedEdgeReason {
+    label: String,
+    weighted_contribution: f64,
 }
 
 fn expand_ask_context(
@@ -2949,7 +2997,9 @@ mod tests {
             &hits,
             &["SPC-002".to_string()],
             &map,
+            &AskEdgeWeightConfig::default(),
         );
         assert!(exps.iter().any(|e| e.id == "SPC-002" && e.reason.contains("graph neighbor")));
+        assert!(exps.iter().any(|e| e.id == "SPC-002" && e.reason.contains("w=")));
     }
 }
