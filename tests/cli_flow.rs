@@ -448,3 +448,76 @@ fn search_lexical_boosts_title_match() {
     let hits = output["hits"].as_array().expect("hits array");
     assert_eq!(hits[0]["id"], "SPC-001");
 }
+
+#[test]
+fn ask_returns_citations_and_evidence() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(
+        spec_dir.join("a.md"),
+        "# Auth Flow\n\nAuthentication flow validates user session.",
+    )
+    .expect("write a");
+    fs::write(spec_dir.join("b.md"), "# Billing\n\nPayment update flow.").expect("write b");
+
+    let init = run_foundry(&root, &["spec", "init", "--sync"]);
+    assert!(init.status.success(), "init failed");
+    let index = run_foundry(&root, &["spec", "search", "index"]);
+    assert!(index.status.success(), "index failed");
+
+    let ask = run_foundry(
+        &root,
+        &[
+            "spec",
+            "ask",
+            "how does auth flow work?",
+            "--format",
+            "json",
+            "--top-k",
+            "3",
+        ],
+    );
+    assert!(
+        ask.status.success(),
+        "ask failed:\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&ask.stdout),
+        String::from_utf8_lossy(&ask.stderr)
+    );
+    let output: serde_json::Value =
+        serde_json::from_slice(&ask.stdout).expect("parse ask output");
+    assert!(output["answer"].is_string());
+    assert!(output["citations"].as_array().is_some_and(|a| !a.is_empty()));
+    assert!(output["evidence"].as_array().is_some_and(|a| !a.is_empty()));
+}
+
+#[test]
+fn ask_reports_gap_when_no_hit() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(spec_dir.join("a.md"), "# Logging\n\nLog retention settings.")
+        .expect("write markdown");
+
+    let init = run_foundry(&root, &["spec", "init", "--sync"]);
+    assert!(init.status.success(), "init failed");
+    let index = run_foundry(&root, &["spec", "search", "index"]);
+    assert!(index.status.success(), "index failed");
+
+    let ask = run_foundry(
+        &root,
+        &["spec", "ask", "zzzz-no-match-token", "--format", "json"],
+    );
+    assert!(
+        ask.status.success(),
+        "ask failed:\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&ask.stdout),
+        String::from_utf8_lossy(&ask.stderr)
+    );
+    let output: serde_json::Value =
+        serde_json::from_slice(&ask.stdout).expect("parse ask output");
+    assert_eq!(output["confidence"], 0.0);
+    assert!(output["gaps"].as_array().is_some_and(|a| !a.is_empty()));
+}

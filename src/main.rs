@@ -36,6 +36,7 @@ enum SpecSubcommand {
     Link(LinkCommand),
     Impact(ImpactArgs),
     Search(SearchCommand),
+    Ask(AskArgs),
 }
 
 #[derive(Args, Debug)]
@@ -99,6 +100,23 @@ enum SearchFormat {
 enum SearchMode {
     Lexical,
     Hybrid,
+}
+
+#[derive(Args, Debug)]
+struct AskArgs {
+    question: String,
+    #[arg(long, default_value_t = 5)]
+    top_k: usize,
+    #[arg(long, value_enum, default_value_t = SearchMode::Hybrid)]
+    mode: SearchMode,
+    #[arg(long, value_enum, default_value_t = AskFormat::Table)]
+    format: AskFormat,
+}
+
+#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+enum AskFormat {
+    Table,
+    Json,
 }
 
 #[derive(Args, Debug)]
@@ -254,6 +272,31 @@ struct SearchQueryOutput {
     hits: Vec<SearchHit>,
 }
 
+#[derive(Debug, Serialize)]
+struct AskCitation {
+    id: String,
+    title: String,
+    path: String,
+}
+
+#[derive(Debug, Serialize)]
+struct AskEvidence {
+    id: String,
+    snippet: String,
+    score: f64,
+}
+
+#[derive(Debug, Serialize)]
+struct AskOutput {
+    question: String,
+    mode: String,
+    answer: String,
+    confidence: f64,
+    citations: Vec<AskCitation>,
+    evidence: Vec<AskEvidence>,
+    gaps: Vec<String>,
+}
+
 #[derive(Default, Debug)]
 struct SearchIndexSummary {
     indexed: usize,
@@ -310,6 +353,10 @@ fn run() -> Result<i32> {
             }
             SpecSubcommand::Search(search) => {
                 run_search(search)?;
+                Ok(0)
+            }
+            SpecSubcommand::Ask(args) => {
+                run_ask(&args)?;
                 Ok(0)
             }
         },
@@ -870,30 +917,7 @@ fn run_search_index(rebuild: bool) -> Result<()> {
 fn run_search_query(args: &SearchQueryArgs) -> Result<()> {
     let conn = open_search_db()?;
     ensure_search_schema_readonly(&conn)?;
-    let normalized = normalize_query_for_fts(&args.query);
-    if normalized.trim().is_empty() {
-        anyhow::bail!("query is empty after normalization");
-    }
-
-    let lexical = collect_lexical_candidates(&conn, &args.query, args.top_k.max(1) * 8)?;
-    let hits = match args.mode {
-        SearchMode::Lexical => lexical
-            .into_iter()
-            .take(args.top_k)
-            .map(|c| SearchHit {
-                id: c.id,
-                title: c.title,
-                path: c.path,
-                score: c.lexical_score,
-                matched_terms: matched_terms(&args.query, &c.terms),
-                snippet: c.snippet,
-            })
-            .collect::<Vec<_>>(),
-        SearchMode::Hybrid => {
-            let semantic = collect_semantic_candidates(&conn, &args.query)?;
-            merge_hybrid_results(&args.query, lexical, semantic, args.top_k)
-        }
-    };
+    let hits = build_search_hits(&conn, &args.query, args.top_k, args.mode)?;
 
     let mode = match args.mode {
         SearchMode::Lexical => "lexical",
@@ -910,6 +934,56 @@ fn run_search_query(args: &SearchQueryArgs) -> Result<()> {
         SearchFormat::Table => print_search_table(&output),
     }
     Ok(())
+}
+
+fn run_ask(args: &AskArgs) -> Result<()> {
+    let conn = open_search_db()?;
+    ensure_search_schema_readonly(&conn)?;
+    let hits = build_search_hits(&conn, &args.question, args.top_k, args.mode)?;
+    let mode = match args.mode {
+        SearchMode::Lexical => "lexical",
+        SearchMode::Hybrid => "hybrid",
+    }
+    .to_string();
+    let output = synthesize_ask_output(args, mode, hits);
+    match args.format {
+        AskFormat::Json => println!("{}", serde_json::to_string_pretty(&output)?),
+        AskFormat::Table => print_ask_table(&output),
+    }
+    Ok(())
+}
+
+fn build_search_hits(
+    conn: &Connection,
+    query: &str,
+    top_k: usize,
+    mode: SearchMode,
+) -> Result<Vec<SearchHit>> {
+    let normalized = normalize_query_for_fts(query);
+    if normalized.trim().is_empty() {
+        anyhow::bail!("query is empty after normalization");
+    }
+
+    let lexical = collect_lexical_candidates(conn, query, top_k.max(1) * 8)?;
+    let hits = match mode {
+        SearchMode::Lexical => lexical
+            .into_iter()
+            .take(top_k)
+            .map(|c| SearchHit {
+                id: c.id,
+                title: c.title,
+                path: c.path,
+                score: c.lexical_score,
+                matched_terms: matched_terms(query, &c.terms),
+                snippet: c.snippet,
+            })
+            .collect::<Vec<_>>(),
+        SearchMode::Hybrid => {
+            let semantic = collect_semantic_candidates(conn, query)?;
+            merge_hybrid_results(query, lexical, semantic, top_k)
+        }
+    };
+    Ok(hits)
 }
 
 fn collect_lexical_candidates(
@@ -1388,12 +1462,22 @@ fn split_into_chunks(text: &str, target_len: usize) -> Vec<String> {
 }
 
 fn normalize_query_for_fts(query: &str) -> String {
-    query
-        .split_whitespace()
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ")
+    query_terms_for_fts(query).join(" ")
+}
+
+fn query_terms_for_fts(query: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    for part in query.split(|c: char| !c.is_alphanumeric()) {
+        let token = part.trim().to_ascii_lowercase();
+        if token.is_empty() {
+            continue;
+        }
+        if seen.insert(token.clone()) {
+            out.push(token);
+        }
+    }
+    out
 }
 
 fn split_long_text_with_overlap(text: &str, target_len: usize, overlap: usize) -> Vec<String> {
@@ -1618,6 +1702,100 @@ fn print_search_table(output: &SearchQueryOutput) {
             "  - {} | {} | score={:.4} | terms={} | {}",
             hit.id, hit.path, hit.score, terms, hit.snippet
         );
+    }
+}
+
+fn synthesize_ask_output(args: &AskArgs, mode: String, hits: Vec<SearchHit>) -> AskOutput {
+    if hits.is_empty() {
+        return AskOutput {
+            question: args.question.clone(),
+            mode,
+            answer: "No relevant spec nodes were found for this question.".to_string(),
+            confidence: 0.0,
+            citations: Vec::new(),
+            evidence: Vec::new(),
+            gaps: vec![
+                "No matching spec nodes. Try a broader query or run `foundry spec search index --rebuild`."
+                    .to_string(),
+            ],
+        };
+    }
+
+    let citations = hits
+        .iter()
+        .map(|hit| AskCitation {
+            id: hit.id.clone(),
+            title: hit.title.clone(),
+            path: hit.path.clone(),
+        })
+        .collect::<Vec<_>>();
+    let evidence = hits
+        .iter()
+        .map(|hit| AskEvidence {
+            id: hit.id.clone(),
+            snippet: hit.snippet.clone(),
+            score: hit.score,
+        })
+        .collect::<Vec<_>>();
+
+    let focus_titles = hits
+        .iter()
+        .take(3)
+        .map(|h| format!("{} ({})", h.title, h.id))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let top_score = hits.first().map(|h| h.score).unwrap_or(0.0);
+    let confidence = confidence_from_hits(top_score, hits.len());
+    let answer = format!(
+        "Relevant specs were found. Start review from: {focus_titles}. Use the cited snippets as evidence and validate downstream impacts via `spec impact` for the top node."
+    );
+
+    AskOutput {
+        question: args.question.clone(),
+        mode,
+        answer,
+        confidence,
+        citations,
+        evidence,
+        gaps: Vec::new(),
+    }
+}
+
+fn confidence_from_hits(top_score: f64, hit_count: usize) -> f64 {
+    if hit_count == 0 {
+        return 0.0;
+    }
+    let score_signal = top_score.abs().min(1.0);
+    let coverage_signal = (hit_count as f64 / 5.0).min(1.0);
+    ((score_signal * 0.6) + (coverage_signal * 0.4)).min(1.0)
+}
+
+fn print_ask_table(output: &AskOutput) {
+    println!("question: {}", output.question);
+    println!("mode: {}", output.mode);
+    println!("confidence: {:.2}", output.confidence);
+    println!("answer: {}", output.answer);
+    println!("citations:");
+    if output.citations.is_empty() {
+        println!("  (none)");
+    } else {
+        for c in &output.citations {
+            println!("  - {} | {} | {}", c.id, c.title, c.path);
+        }
+    }
+    println!("evidence:");
+    if output.evidence.is_empty() {
+        println!("  (none)");
+    } else {
+        for e in &output.evidence {
+            println!("  - {} | score={:.4} | {}", e.id, e.score, e.snippet);
+        }
+    }
+    if !output.gaps.is_empty() {
+        println!("gaps:");
+        for gap in &output.gaps {
+            println!("  - {gap}");
+        }
     }
 }
 
@@ -2304,5 +2482,11 @@ mod tests {
         assert!(json.starts_with('['));
         assert!(json.ends_with(']'));
         assert!(json.contains(','));
+    }
+
+    #[test]
+    fn normalize_query_for_fts_removes_punctuation() {
+        let normalized = normalize_query_for_fts("How does auth-flow work?");
+        assert_eq!(normalized, "how does auth flow work");
     }
 }

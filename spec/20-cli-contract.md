@@ -7,6 +7,7 @@
 - `foundry spec link`
 - `foundry spec impact`
 - `foundry spec search`
+- `foundry spec ask`
 
 ## `foundry spec init`
 
@@ -119,3 +120,28 @@ Flags:
 - `hybrid` combines lexical ranking and semantic similarity (RRF merge)
 - semantic similarity in `hybrid` is computed from pre-indexed chunk vectors (`spec search index`)
 - if `FOUNDRY_SQLITE_VEC_PATH` is set, the tool loads `sqlite-vec` and uses `vec0` search; otherwise it falls back to local cosine ranking
+
+## `foundry spec ask`
+
+Purpose:
+
+- provide retrieval-augmented, citation-first answers for AI agents and reviewers
+- return machine-readable evidence that can be interpreted by external agents
+
+Usage:
+
+- `foundry spec ask "<question>" --format json`
+
+Flags:
+
+- `--top-k <n>` default `5`
+- `--mode lexical|hybrid` default `hybrid`
+- `--format table|json` default `table`
+
+Output fields (`--format json`):
+
+- `answer`
+- `confidence`
+- `citations[]` (`id`, `title`, `path`)
+- `evidence[]` (`id`, `snippet`, `score`)
+- `gaps[]` (empty if enough evidence exists)
