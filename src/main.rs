@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -141,6 +141,23 @@ struct InitSummary {
 struct LintState {
     errors: Vec<String>,
 }
+
+const NODE_TYPES: &[&str] = &[
+    "product_goal",
+    "feature_requirement",
+    "non_functional_requirement",
+    "constraint",
+    "domain_concept",
+    "decision",
+    "workflow",
+    "api_contract",
+    "data_contract",
+    "test_spec",
+];
+
+const NODE_STATUSES: &[&str] = &["draft", "review", "active", "deprecated", "archived"];
+const EDGE_TYPES: &[&str] = &["depends_on", "refines", "conflicts_with", "tests", "impacts"];
+const EDGE_STATUSES: &[&str] = &["confirmed", "proposed"];
 
 #[derive(Debug, Serialize)]
 struct DirectDependency {
@@ -318,6 +335,7 @@ fn run_lint() -> Result<i32> {
     let mut duplicate_ids = HashSet::<String>::new();
     let mut incoming_counts = HashMap::<String, usize>::new();
     let mut outgoing_counts = HashMap::<String, usize>::new();
+    let mut normalized_term_variants = BTreeMap::<String, BTreeSet<String>>::new();
 
     for (_, meta) in &metas {
         if id_to_meta.insert(meta.id.clone(), meta.clone()).is_some() {
@@ -329,6 +347,24 @@ fn run_lint() -> Result<i32> {
     }
 
     for (meta_path, meta) in &metas {
+        validate_meta_semantics(meta_path, meta, &mut lint);
+
+        for term in &meta.terms {
+            let normalized = normalize_term_key(term);
+            if normalized.is_empty() {
+                lint.errors.push(format!(
+                    "empty or non-normalizable term in {} (id={})",
+                    meta_path.display(),
+                    meta.id
+                ));
+                continue;
+            }
+            normalized_term_variants
+                .entry(normalized)
+                .or_default()
+                .insert(term.clone());
+        }
+
         if !Path::new(&meta.body_md_path).exists() {
             lint.errors.push(format!(
                 "{} points to missing markdown file: {}",
@@ -359,6 +395,18 @@ fn run_lint() -> Result<i32> {
                     meta.id, edge.to
                 ));
             }
+            if !EDGE_TYPES.contains(&edge.edge_type.as_str()) {
+                lint.errors.push(format!(
+                    "invalid edge type from {} to {}: {}",
+                    meta.id, edge.to, edge.edge_type
+                ));
+            }
+            if !EDGE_STATUSES.contains(&edge.status.as_str()) {
+                lint.errors.push(format!(
+                    "invalid edge status from {} to {}: {}",
+                    meta.id, edge.to, edge.status
+                ));
+            }
             if edge.confidence < 0.0 || edge.confidence > 1.0 {
                 lint.errors.push(format!(
                     "invalid edge confidence from {} to {}: {}",
@@ -383,6 +431,15 @@ fn run_lint() -> Result<i32> {
         let out_count = outgoing_counts.get(&meta.id).copied().unwrap_or(0);
         if meta.node_type != "product_goal" && in_count == 0 && out_count == 0 {
             lint.errors.push(format!("orphan node: {}", meta.id));
+        }
+    }
+
+    for (normalized, variants) in normalized_term_variants {
+        if variants.len() > 1 {
+            let joined = variants.into_iter().collect::<Vec<_>>().join(", ");
+            lint.errors.push(format!(
+                "term key drift detected for normalized key '{normalized}': {joined}"
+            ));
         }
     }
 
@@ -649,6 +706,76 @@ fn find_markdown_files(spec_root: &Path) -> Result<Vec<PathBuf>> {
     }
     files.sort();
     Ok(files)
+}
+
+fn validate_meta_semantics(path: &Path, meta: &SpecNodeMeta, lint: &mut LintState) {
+    if !is_valid_node_id(&meta.id) {
+        lint.errors.push(format!(
+            "invalid node id format in {}: {}",
+            path.display(),
+            meta.id
+        ));
+    }
+    if meta.title.trim().is_empty() {
+        lint.errors
+            .push(format!("empty title in {} (id={})", path.display(), meta.id));
+    }
+    if meta.body_md_path.trim().is_empty() {
+        lint.errors.push(format!(
+            "empty body_md_path in {} (id={})",
+            path.display(),
+            meta.id
+        ));
+    } else if !(meta.body_md_path.starts_with("spec/") && meta.body_md_path.ends_with(".md")) {
+        lint.errors.push(format!(
+            "invalid body_md_path format in {} (id={}): {}",
+            path.display(),
+            meta.id,
+            meta.body_md_path
+        ));
+    }
+    if !NODE_TYPES.contains(&meta.node_type.as_str()) {
+        lint.errors.push(format!(
+            "invalid node type in {} (id={}): {}",
+            path.display(),
+            meta.id,
+            meta.node_type
+        ));
+    }
+    if !NODE_STATUSES.contains(&meta.status.as_str()) {
+        lint.errors.push(format!(
+            "invalid node status in {} (id={}): {}",
+            path.display(),
+            meta.id,
+            meta.status
+        ));
+    }
+    if !is_valid_sha256(&meta.hash) {
+        lint.errors.push(format!(
+            "invalid hash format in {} (id={}): {}",
+            path.display(),
+            meta.id,
+            meta.hash
+        ));
+    }
+}
+
+fn is_valid_node_id(id: &str) -> bool {
+    if let Some(num) = id.strip_prefix("SPC-") {
+        return !num.is_empty() && num.chars().all(|c| c.is_ascii_digit());
+    }
+    false
+}
+
+fn is_valid_sha256(hash: &str) -> bool {
+    hash.len() == 64 && hash.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+}
+
+fn normalize_term_key(term: &str) -> String {
+    term.chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 fn is_meta_json(path: &Path) -> bool {
@@ -976,5 +1103,34 @@ mod tests {
         assert!(depth1.contains(&"SPC-001".to_string()));
         assert!(depth1.contains(&"SPC-002".to_string()));
         assert!(!depth1.contains(&"SPC-003".to_string()));
+    }
+
+    #[test]
+    fn normalize_term_key_collapses_style_variants() {
+        assert_eq!(normalize_term_key("User_ID"), "userid");
+        assert_eq!(normalize_term_key("user-id"), "userid");
+        assert_eq!(normalize_term_key("User Id"), "userid");
+    }
+
+    #[test]
+    fn validate_meta_semantics_rejects_invalid_fields() {
+        let meta = SpecNodeMeta {
+            id: "BAD-001".to_string(),
+            node_type: "unknown_type".to_string(),
+            status: "unknown_status".to_string(),
+            title: "".to_string(),
+            body_md_path: "docs/a.txt".to_string(),
+            terms: vec![],
+            hash: "not-a-hash".to_string(),
+            edges: vec![],
+        };
+        let mut lint = LintState::default();
+        validate_meta_semantics(Path::new("spec/a.meta.json"), &meta, &mut lint);
+        assert!(lint.errors.iter().any(|e| e.contains("invalid node id format")));
+        assert!(lint.errors.iter().any(|e| e.contains("invalid node type")));
+        assert!(lint.errors.iter().any(|e| e.contains("invalid node status")));
+        assert!(lint.errors.iter().any(|e| e.contains("empty title")));
+        assert!(lint.errors.iter().any(|e| e.contains("invalid body_md_path format")));
+        assert!(lint.errors.iter().any(|e| e.contains("invalid hash format")));
     }
 }
