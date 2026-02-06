@@ -30,6 +30,12 @@ const TEMPLATE_ARTIFACTS: &[TemplateArtifact] = &[
     },
 ];
 
+struct TemplateContext {
+    project_name: String,
+    main_spec_id: String,
+    default_depth: String,
+}
+
 #[derive(Default)]
 pub(super) struct AgentTemplateSummary {
     pub(super) written: usize,
@@ -61,6 +67,7 @@ pub(super) fn run_agent(agent: AgentCommand) -> Result<i32> {
 
 pub(super) fn generate_agent_templates(agents: &[AgentTarget], sync: bool) -> AgentTemplateSummary {
     let mut summary = AgentTemplateSummary::default();
+    let context = build_template_context();
     let mut uniq = HashSet::new();
     for agent in agents {
         if !uniq.insert(*agent) {
@@ -100,7 +107,7 @@ pub(super) fn generate_agent_templates(agents: &[AgentTarget], sync: bool) -> Ag
                     }
                 };
 
-                let rendered = render_template(&base, &overlay);
+                let rendered = render_template(&base, &overlay, &context);
                 if let Some(parent) = out_path.parent()
                     && let Err(err) = fs::create_dir_all(parent)
                 {
@@ -131,6 +138,7 @@ fn run_agent_doctor(args: &AgentDoctorArgs) -> Result<i32> {
         .into_iter()
         .filter(|a| uniq.insert(*a))
         .collect::<Vec<_>>();
+    let context = build_template_context();
 
     let mut issues = Vec::<AgentDoctorIssue>::new();
     let mut checked = 0usize;
@@ -179,7 +187,7 @@ fn run_agent_doctor(args: &AgentDoctorArgs) -> Result<i32> {
                         continue;
                     }
                 };
-                let expected = render_template(&base, &overlay);
+                let expected = render_template(&base, &overlay, &context);
                 let actual = match fs::read_to_string(&out_path) {
                     Ok(v) => v,
                     Err(err) => {
@@ -243,13 +251,13 @@ fn print_agent_doctor_table(output: &AgentDoctorOutput) {
     );
 }
 
-fn render_template(base: &str, overlay: &str) -> String {
+fn render_template(base: &str, overlay: &str, context: &TemplateContext) -> String {
     let mut out = String::new();
     out.push_str(base.trim_end());
     out.push_str("\n\n---\n\n");
     out.push_str(overlay.trim_end());
     out.push('\n');
-    out
+    apply_placeholders(&out, context)
 }
 
 fn agent_slug(agent: AgentTarget) -> &'static str {
@@ -257,4 +265,50 @@ fn agent_slug(agent: AgentTarget) -> &'static str {
         AgentTarget::Codex => "codex",
         AgentTarget::Claude => "claude",
     }
+}
+
+fn build_template_context() -> TemplateContext {
+    let project_name = std::env::current_dir()
+        .ok()
+        .and_then(|p| p.file_name().map(|v| v.to_string_lossy().to_string()))
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "project".to_string());
+    let main_spec_id = detect_main_spec_id();
+    let default_depth = "2".to_string();
+    TemplateContext {
+        project_name,
+        main_spec_id,
+        default_depth,
+    }
+}
+
+fn detect_main_spec_id() -> String {
+    let spec_root = Path::new("spec");
+    if !spec_root.exists() {
+        return "SPC-001".to_string();
+    }
+    let mut lint = LintState::default();
+    let metas = match load_all_meta(spec_root, &mut lint) {
+        Ok(v) => v,
+        Err(_) => return "SPC-001".to_string(),
+    };
+    let mut product_goals = metas
+        .iter()
+        .map(|(_, m)| m)
+        .filter(|m| m.node_type == "product_goal")
+        .map(|m| m.id.clone())
+        .collect::<Vec<_>>();
+    product_goals.sort();
+    if let Some(first) = product_goals.first() {
+        return first.clone();
+    }
+    let mut ids = metas.into_iter().map(|(_, m)| m.id).collect::<Vec<_>>();
+    ids.sort();
+    ids.first().cloned().unwrap_or_else(|| "SPC-001".to_string())
+}
+
+fn apply_placeholders(text: &str, context: &TemplateContext) -> String {
+    text.replace("{{project_name}}", &context.project_name)
+        .replace("{{main_spec_id}}", &context.main_spec_id)
+        .replace("{{default_depth}}", &context.default_depth)
 }

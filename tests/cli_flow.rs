@@ -96,6 +96,14 @@ fn init_with_agents_generates_command_templates() {
     assert!(claude_text.contains("Claude Overlay: spec-plan"));
     assert!(codex_skill_text.contains("Codex Skill Overlay: spec-plan"));
     assert!(claude_skill_text.contains("Claude Skill Overlay: spec-plan"));
+    assert!(!codex_text.contains("{{"), "placeholder should be rendered");
+    assert!(!codex_skill_text.contains("{{"), "placeholder should be rendered");
+    let project_name = root
+        .file_name()
+        .and_then(|s| s.to_str())
+        .expect("project dir name");
+    assert!(codex_text.contains(project_name));
+    assert!(codex_text.contains("SPC-001"));
 }
 
 #[test]

@@ -38,6 +38,12 @@ Generated paths (`--agent`):
 - `docs/agents/<agent>/skills/*.md` from
   `templates/skills/base/*.md` + `templates/skills/overlays/<agent>/*.md`
 
+Supported template placeholders:
+
+- `{{project_name}}`: current working directory name
+- `{{main_spec_id}}`: first `product_goal` id if present, otherwise smallest node id, fallback `SPC-001`
+- `{{default_depth}}`: default impact traversal depth (`2`)
+
 ## `foundry spec agent`
 
 Subcommands:

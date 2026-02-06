@@ -77,6 +77,7 @@ Done definition:
 
 - add `spec init --agent <codex|claude>` command-template generation
 - compose templates from `templates/{commands|skills}/base` + agent overlays
+- support basic placeholder substitution (`project_name`, `main_spec_id`, `default_depth`)
 - support safe regeneration with `--agent-sync`
 - add `spec agent doctor` for generated template drift detection
 
