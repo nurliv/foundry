@@ -11,6 +11,9 @@ serde_json = "1.0"
 sha2 = "0.10"
 walkdir = "2.5"
 rusqlite = { version = "0.33", features = ["bundled", "load_extension"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+flate2 = "1.0"
+tar = "0.4"
 
 [dev-dependencies]
 assert_cmd = "2.0"

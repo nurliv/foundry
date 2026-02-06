@@ -75,6 +75,8 @@ Template source options:
 - `--template-source local|github` (default `github`)
 - `--template-repo <git_url>` (default `https://github.com/nurliv/foundry.git`)
 - `--template-ref <git_ref>` (default `main`)
+- github mode downloads `<repo>/archive/<ref>.tar.gz`, extracts under `.foundry/template-sources/`, and reuses the extracted cache on later runs
+- temporary archive files are deleted after extraction
 - github fetch failure falls back to local `templates/`
 
 Validate generated outputs against templates:

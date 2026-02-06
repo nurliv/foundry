@@ -1,5 +1,4 @@
 use super::*;
-use std::process::Command;
 
 const TEMPLATE_PHASES: &[&str] = &[
     "spec-plan",
@@ -269,46 +268,57 @@ fn sync_templates_from_github(config: &TemplateConfig) -> Result<PathBuf> {
     let cache_root = PathBuf::from(".foundry/template-sources");
     fs::create_dir_all(&cache_root)?;
     let key = template_cache_key(config);
-    let repo_dir = cache_root.join(key);
+    let repo_dir = cache_root.join(&key);
 
-    if !repo_dir.exists() {
-        let status = Command::new("git")
-            .args([
-                "clone",
-                "--depth",
-                "1",
-                "--branch",
-                &config.git_ref,
-                &config.repo,
-            ])
-            .arg(&repo_dir)
-            .status()
-            .with_context(|| "failed to run git clone for template source")?;
-        if !status.success() {
-            anyhow::bail!("git clone failed for {}", config.repo);
-        }
+    if repo_dir.exists() {
         return Ok(repo_dir);
     }
 
-    let fetch_status = Command::new("git")
-        .arg("-C")
-        .arg(&repo_dir)
-        .args(["fetch", "--depth", "1", "origin", &config.git_ref])
-        .status()
-        .with_context(|| "failed to run git fetch for template source")?;
-    if !fetch_status.success() {
-        anyhow::bail!("git fetch failed for {}", config.repo);
+    let archive_url = github_archive_url(&config.repo, &config.git_ref)?;
+    let archive_path = cache_root.join(format!("{key}.tar.gz"));
+    let extract_tmp = cache_root.join(format!("{key}.extract"));
+
+    if extract_tmp.exists() {
+        let _ = fs::remove_dir_all(&extract_tmp);
+    }
+    fs::create_dir_all(&extract_tmp)?;
+
+    let response = reqwest::blocking::get(&archive_url)
+        .with_context(|| format!("failed to download template archive: {archive_url}"))?;
+    if !response.status().is_success() {
+        anyhow::bail!(
+            "template archive download failed: {} ({})",
+            archive_url,
+            response.status()
+        );
     }
 
-    let checkout_status = Command::new("git")
-        .arg("-C")
-        .arg(&repo_dir)
-        .args(["checkout", "--force", "FETCH_HEAD"])
-        .status()
-        .with_context(|| "failed to run git checkout for template source")?;
-    if !checkout_status.success() {
-        anyhow::bail!("git checkout FETCH_HEAD failed");
-    }
+    let bytes = response
+        .bytes()
+        .with_context(|| format!("failed to read archive body: {archive_url}"))?;
+    fs::write(&archive_path, &bytes)
+        .with_context(|| format!("failed writing archive file: {}", archive_path.display()))?;
+
+    let tar_gz = fs::File::open(&archive_path)
+        .with_context(|| format!("failed opening archive: {}", archive_path.display()))?;
+    let decoder = flate2::read::GzDecoder::new(tar_gz);
+    let mut archive = tar::Archive::new(decoder);
+    archive
+        .unpack(&extract_tmp)
+        .with_context(|| format!("failed unpacking archive to {}", extract_tmp.display()))?;
+
+    let extracted_repo_root = detect_extracted_repo_root(&extract_tmp)
+        .with_context(|| format!("failed to locate extracted repo root in {}", extract_tmp.display()))?;
+    fs::rename(&extracted_repo_root, &repo_dir).with_context(|| {
+        format!(
+            "failed moving extracted templates from {} to {}",
+            extracted_repo_root.display(),
+            repo_dir.display()
+        )
+    })?;
+
+    let _ = fs::remove_file(&archive_path);
+    let _ = fs::remove_dir_all(&extract_tmp);
     Ok(repo_dir)
 }
 
@@ -318,6 +328,34 @@ fn template_cache_key(config: &TemplateConfig) -> String {
     hasher.update(b"\n");
     hasher.update(config.git_ref.as_bytes());
     format!("{:x}", hasher.finalize())
+}
+
+fn github_archive_url(repo: &str, git_ref: &str) -> Result<String> {
+    let repo = repo.trim().trim_end_matches(".git");
+    let normalized = if let Some(path) = repo.strip_prefix("git@github.com:") {
+        format!("https://github.com/{path}")
+    } else {
+        repo.to_string()
+    };
+    if !normalized.starts_with("https://github.com/") {
+        anyhow::bail!("unsupported template repo url for github archive: {repo}");
+    }
+    Ok(format!("{normalized}/archive/{git_ref}.tar.gz"))
+}
+
+fn detect_extracted_repo_root(extract_tmp: &Path) -> Result<PathBuf> {
+    let mut dirs = fs::read_dir(extract_tmp)?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.is_dir())
+        .collect::<Vec<_>>();
+    dirs.sort();
+    for dir in dirs {
+        if dir.join("templates").is_dir() {
+            return Ok(dir);
+        }
+    }
+    anyhow::bail!("no extracted directory with templates/ found")
 }
 
 fn print_agent_doctor_table(output: &AgentDoctorOutput) {
