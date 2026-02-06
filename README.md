@@ -106,6 +106,7 @@ Template sources:
 - `templates/commands/overlays/{codex|claude}`
 - `templates/skills/base`
 - `templates/skills/overlays/{codex|claude}`
+- `templates/node-docs/{spec|design|task}.md` (document skeletons used by agent instructions)
 
 Generated outputs:
 

@@ -47,6 +47,10 @@ Generated paths (`--agent`):
   `templates/commands/base/*.md` + `templates/commands/overlays/<agent>/*.md`
 - `docs/agents/<agent>/skills/*.md` from
   `templates/skills/base/*.md` + `templates/skills/overlays/<agent>/*.md`
+- agent templates also reference document skeletons under:
+- `templates/node-docs/spec.md`
+- `templates/node-docs/design.md`
+- `templates/node-docs/task.md`
 - install output (`--agent-output install|both`):
 - codex: `<codex_home>/{commands|skills}/foundry/*.md`
 - claude: `<claude_dir>/{commands|skills}/foundry/*.md`

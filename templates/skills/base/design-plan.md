@@ -7,6 +7,7 @@ Support the design-plan phase with traceable graph operations and JSON-first evi
 - Relevant node IDs
 - Current phase objective
 - Open risks or constraints
+- Design markdown template: `templates/node-docs/design.md`
 
 ## Outputs
 - Updated links/status decisions
