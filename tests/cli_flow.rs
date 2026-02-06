@@ -281,3 +281,67 @@ fn link_propose_creates_proposed_edge() {
     assert!(a_after.contains("\"status\": \"proposed\""), "{a_after}");
     assert!(a_after.contains("\"type\": \"impacts\""), "{a_after}");
 }
+
+#[test]
+fn search_index_and_query_json_work() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(
+        spec_dir.join("a.md"),
+        "# Login Flow\n\nUser logs in with email and password.",
+    )
+    .expect("write a");
+    fs::write(
+        spec_dir.join("b.md"),
+        "# Billing Flow\n\nUser updates payment method.",
+    )
+    .expect("write b");
+
+    let init = run_foundry(&root, &["spec", "init", "--sync"]);
+    assert!(init.status.success(), "init failed");
+
+    let index = run_foundry(&root, &["spec", "search", "index"]);
+    assert!(index.status.success(), "index failed");
+
+    let query = run_foundry(
+        &root,
+        &[
+            "spec",
+            "search",
+            "query",
+            "email password",
+            "--format",
+            "json",
+            "--top-k",
+            "5",
+        ],
+    );
+    assert!(query.status.success(), "query failed");
+    let output: serde_json::Value =
+        serde_json::from_slice(&query.stdout).expect("parse query output");
+    let hits = output["hits"].as_array().expect("hits should be array");
+    assert!(!hits.is_empty(), "search should return at least one hit");
+    assert_eq!(hits[0]["id"], "SPC-001");
+}
+
+#[test]
+fn search_doctor_reports_ok_after_index() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(spec_dir.join("a.md"), "# A\n\ntext").expect("write a");
+    fs::write(spec_dir.join("b.md"), "# B\n\ntext").expect("write b");
+
+    let init = run_foundry(&root, &["spec", "init", "--sync"]);
+    assert!(init.status.success(), "init failed");
+    let index = run_foundry(&root, &["spec", "search", "index"]);
+    assert!(index.status.success(), "index failed");
+
+    let doctor = run_foundry(&root, &["spec", "search", "doctor"]);
+    assert!(doctor.status.success(), "doctor command failed");
+    let stdout = String::from_utf8_lossy(&doctor.stdout);
+    assert!(stdout.contains("search doctor: ok"), "{stdout}");
+}

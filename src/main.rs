@@ -1,9 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
@@ -33,6 +35,7 @@ enum SpecSubcommand {
     Lint,
     Link(LinkCommand),
     Impact(ImpactArgs),
+    Search(SearchCommand),
 }
 
 #[derive(Args, Debug)]
@@ -54,6 +57,48 @@ struct ImpactArgs {
 enum ImpactFormat {
     Table,
     Json,
+}
+
+#[derive(Args, Debug)]
+struct SearchCommand {
+    #[command(subcommand)]
+    command: SearchSubcommand,
+}
+
+#[derive(Subcommand, Debug)]
+enum SearchSubcommand {
+    Index(SearchIndexArgs),
+    Query(SearchQueryArgs),
+    Doctor,
+}
+
+#[derive(Args, Debug)]
+struct SearchIndexArgs {
+    #[arg(long)]
+    rebuild: bool,
+}
+
+#[derive(Args, Debug)]
+struct SearchQueryArgs {
+    query: String,
+    #[arg(long, default_value_t = 10)]
+    top_k: usize,
+    #[arg(long, value_enum, default_value_t = SearchFormat::Table)]
+    format: SearchFormat,
+    #[arg(long, value_enum, default_value_t = SearchMode::Lexical)]
+    mode: SearchMode,
+}
+
+#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+enum SearchFormat {
+    Table,
+    Json,
+}
+
+#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+enum SearchMode {
+    Lexical,
+    Hybrid,
 }
 
 #[derive(Args, Debug)]
@@ -191,6 +236,30 @@ struct ImpactOutput {
     recommended_review_order: Vec<String>,
 }
 
+#[derive(Debug, Serialize)]
+struct SearchHit {
+    id: String,
+    title: String,
+    path: String,
+    score: f64,
+    matched_terms: Vec<String>,
+    snippet: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SearchQueryOutput {
+    query: String,
+    mode: String,
+    hits: Vec<SearchHit>,
+}
+
+#[derive(Default, Debug)]
+struct SearchIndexSummary {
+    indexed: usize,
+    skipped: usize,
+    deleted: usize,
+}
+
 fn main() {
     match run() {
         Ok(exit_code) => std::process::exit(exit_code),
@@ -216,6 +285,10 @@ fn run() -> Result<i32> {
             }
             SpecSubcommand::Impact(args) => {
                 run_impact(&args)?;
+                Ok(0)
+            }
+            SpecSubcommand::Search(search) => {
+                run_search(search)?;
                 Ok(0)
             }
         },
@@ -643,6 +716,379 @@ fn run_impact(args: &ImpactArgs) -> Result<()> {
     println!("recommended_review_order:");
     print_string_list(&output.recommended_review_order);
     Ok(())
+}
+
+fn run_search(search: SearchCommand) -> Result<()> {
+    match search.command {
+        SearchSubcommand::Index(args) => run_search_index(args.rebuild),
+        SearchSubcommand::Query(args) => run_search_query(&args),
+        SearchSubcommand::Doctor => run_search_doctor(),
+    }
+}
+
+fn run_search_index(rebuild: bool) -> Result<()> {
+    let spec_root = Path::new("spec");
+    if !spec_root.exists() {
+        println!("search index: spec/ directory not found");
+        return Ok(());
+    }
+    let mut lint = LintState::default();
+    let metas = load_all_meta(spec_root, &mut lint)?;
+    let mut conn = open_search_db()?;
+    ensure_search_schema(&mut conn)?;
+    let tx = conn.transaction()?;
+
+    if rebuild {
+        tx.execute("DELETE FROM fts_chunks;", [])?;
+        tx.execute("DELETE FROM chunks;", [])?;
+        tx.execute("DELETE FROM chunk_vectors;", [])?;
+        tx.execute("DELETE FROM nodes;", [])?;
+    }
+
+    let mut summary = SearchIndexSummary::default();
+    let mut current_ids = HashSet::new();
+
+    for (meta_path, meta) in metas {
+        current_ids.insert(meta.id.clone());
+        let existing_hash: Option<String> = tx
+            .query_row(
+                "SELECT hash FROM nodes WHERE id = ?1",
+                params![meta.id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if !rebuild && existing_hash.as_deref() == Some(meta.hash.as_str()) {
+            summary.skipped += 1;
+            continue;
+        }
+
+        let body = fs::read_to_string(&meta.body_md_path)
+            .with_context(|| format!("failed reading {}", meta.body_md_path))?;
+        let chunks = split_into_chunks(&body, 800);
+        let terms_json = serde_json::to_string(&meta.terms)?;
+        let md_path = meta.body_md_path.clone();
+        let now = unix_ts();
+
+        tx.execute("DELETE FROM fts_chunks WHERE node_id = ?1", params![meta.id])?;
+        tx.execute("DELETE FROM chunks WHERE node_id = ?1", params![meta.id])?;
+        tx.execute(
+            "INSERT INTO nodes (id, title, md_path, meta_path, hash, terms_json, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(id) DO UPDATE SET title=excluded.title, md_path=excluded.md_path, meta_path=excluded.meta_path, hash=excluded.hash, terms_json=excluded.terms_json, updated_at=excluded.updated_at",
+            params![meta.id, meta.title, md_path, meta_path.to_string_lossy().to_string(), meta.hash, terms_json, now],
+        )?;
+
+        for (idx, chunk) in chunks.iter().enumerate() {
+            let chunk_id = format!("{}:{idx}", meta.id);
+            let token_len = tokenize(chunk).len() as i64;
+            tx.execute(
+                "INSERT INTO chunks (chunk_id, node_id, ord, text, token_len) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![chunk_id, meta.id, idx as i64, chunk, token_len],
+            )?;
+            tx.execute(
+                "INSERT INTO fts_chunks (chunk_id, node_id, text) VALUES (?1, ?2, ?3)",
+                params![format!("{}:{idx}", meta.id), meta.id, chunk],
+            )?;
+        }
+        summary.indexed += 1;
+    }
+
+    let mut stale_ids = Vec::new();
+    {
+        let mut stmt = tx.prepare("SELECT id FROM nodes")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        for row in rows {
+            let id = row?;
+            if !current_ids.contains(&id) {
+                stale_ids.push(id);
+            }
+        }
+    }
+    for id in stale_ids {
+        tx.execute("DELETE FROM fts_chunks WHERE node_id = ?1", params![id])?;
+        tx.execute("DELETE FROM chunks WHERE node_id = ?1", params![id])?;
+        tx.execute("DELETE FROM chunk_vectors WHERE chunk_id LIKE ?1", params![format!("{id}:%")])?;
+        tx.execute("DELETE FROM nodes WHERE id = ?1", params![id])?;
+        summary.deleted += 1;
+    }
+
+    tx.commit()?;
+    println!(
+        "search index summary: indexed={} skipped={} deleted={}",
+        summary.indexed, summary.skipped, summary.deleted
+    );
+    Ok(())
+}
+
+fn run_search_query(args: &SearchQueryArgs) -> Result<()> {
+    let conn = open_search_db()?;
+    ensure_search_schema_readonly(&conn)?;
+    let normalized = normalize_query_for_fts(&args.query);
+    if normalized.trim().is_empty() {
+        anyhow::bail!("query is empty after normalization");
+    }
+
+    let sql = "
+        SELECT
+            n.id,
+            n.title,
+            n.md_path,
+            bm25(fts_chunks) AS score,
+            SUBSTR(c.text, 1, 180) AS snippet,
+            n.terms_json
+        FROM fts_chunks
+        JOIN chunks c ON c.chunk_id = fts_chunks.chunk_id
+        JOIN nodes n ON n.id = fts_chunks.node_id
+        WHERE fts_chunks MATCH ?1
+        ORDER BY score ASC
+        LIMIT ?2
+    ";
+    let mut stmt = conn.prepare(sql)?;
+    let fetch_limit = (args.top_k.max(1) * 5) as i64;
+    let mut rows = stmt.query(params![normalized, fetch_limit])?;
+    let mut by_node = HashMap::<String, SearchHit>::new();
+    while let Some(row) = rows.next()? {
+        let id: String = row.get(0)?;
+        let title: String = row.get(1)?;
+        let path: String = row.get(2)?;
+        let score: f64 = row.get(3)?;
+        let snippet: String = row.get(4)?;
+        let terms_json: String = row.get(5)?;
+        let terms: Vec<String> = serde_json::from_str(&terms_json).unwrap_or_default();
+        by_node.entry(id.clone()).or_insert_with(|| SearchHit {
+            id,
+            title,
+            path,
+            score,
+            matched_terms: matched_terms(&args.query, &terms),
+            snippet: snippet.replace('\n', " "),
+        });
+    }
+    let mut hits = by_node.into_values().collect::<Vec<_>>();
+    hits.sort_by(|a, b| a.score.total_cmp(&b.score).then(a.id.cmp(&b.id)));
+    hits.truncate(args.top_k);
+
+    let mode = match args.mode {
+        SearchMode::Lexical => "lexical",
+        SearchMode::Hybrid => "hybrid(lexical-fallback)",
+    }
+    .to_string();
+    let output = SearchQueryOutput {
+        query: args.query.clone(),
+        mode,
+        hits,
+    };
+    match args.format {
+        SearchFormat::Json => println!("{}", serde_json::to_string_pretty(&output)?),
+        SearchFormat::Table => print_search_table(&output),
+    }
+    Ok(())
+}
+
+fn run_search_doctor() -> Result<()> {
+    let spec_root = Path::new("spec");
+    let mut lint = LintState::default();
+    let metas = load_all_meta(spec_root, &mut lint)?;
+    let mut expected = HashMap::new();
+    for (_, meta) in metas {
+        expected.insert(meta.id, meta.hash);
+    }
+
+    let conn = open_search_db()?;
+    ensure_search_schema_readonly(&conn)?;
+
+    let mut issues = Vec::new();
+    let mut stmt = conn.prepare("SELECT id, hash FROM nodes")?;
+    let rows = stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?;
+    let mut indexed_ids = HashSet::new();
+    for row in rows {
+        let (id, hash) = row?;
+        indexed_ids.insert(id.clone());
+        match expected.get(&id) {
+            Some(expected_hash) if expected_hash == &hash => {}
+            Some(expected_hash) => issues.push(format!(
+                "hash mismatch in index for {id}: indexed={hash} expected={expected_hash}"
+            )),
+            None => issues.push(format!("stale indexed node: {id}")),
+        }
+    }
+    for id in expected.keys() {
+        if !indexed_ids.contains(id) {
+            issues.push(format!("missing indexed node: {id}"));
+        }
+    }
+
+    let orphan_chunks: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM chunks c LEFT JOIN nodes n ON n.id = c.node_id WHERE n.id IS NULL",
+        [],
+        |row| row.get(0),
+    )?;
+    if orphan_chunks > 0 {
+        issues.push(format!("orphan chunks: {orphan_chunks}"));
+    }
+
+    if issues.is_empty() {
+        println!("search doctor: ok");
+    } else {
+        for issue in &issues {
+            println!("search doctor: issue: {issue}");
+        }
+        println!("search doctor summary: {} issue(s)", issues.len());
+    }
+    Ok(())
+}
+
+fn ensure_search_schema(conn: &mut Connection) -> Result<()> {
+    conn.execute_batch(
+        "
+        PRAGMA journal_mode=WAL;
+        CREATE TABLE IF NOT EXISTS nodes (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            md_path TEXT NOT NULL,
+            meta_path TEXT NOT NULL,
+            hash TEXT NOT NULL,
+            terms_json TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS chunks (
+            chunk_id TEXT PRIMARY KEY,
+            node_id TEXT NOT NULL,
+            ord INTEGER NOT NULL,
+            text TEXT NOT NULL,
+            token_len INTEGER NOT NULL,
+            FOREIGN KEY(node_id) REFERENCES nodes(id) ON DELETE CASCADE
+        );
+        CREATE VIRTUAL TABLE IF NOT EXISTS fts_chunks USING fts5(
+            chunk_id UNINDEXED,
+            node_id UNINDEXED,
+            text,
+            tokenize = 'unicode61'
+        );
+        CREATE TABLE IF NOT EXISTS chunk_vectors (
+            chunk_id TEXT PRIMARY KEY,
+            model TEXT NOT NULL,
+            dim INTEGER NOT NULL,
+            embedding BLOB
+        );
+        ",
+    )?;
+    Ok(())
+}
+
+fn ensure_search_schema_readonly(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS nodes (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            md_path TEXT NOT NULL,
+            meta_path TEXT NOT NULL,
+            hash TEXT NOT NULL,
+            terms_json TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS chunks (
+            chunk_id TEXT PRIMARY KEY,
+            node_id TEXT NOT NULL,
+            ord INTEGER NOT NULL,
+            text TEXT NOT NULL,
+            token_len INTEGER NOT NULL
+        );
+        CREATE VIRTUAL TABLE IF NOT EXISTS fts_chunks USING fts5(
+            chunk_id UNINDEXED,
+            node_id UNINDEXED,
+            text,
+            tokenize = 'unicode61'
+        );
+        ",
+    )?;
+    Ok(())
+}
+
+fn open_search_db() -> Result<Connection> {
+    let db_path = search_db_path();
+    if let Some(parent) = db_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let conn = Connection::open(db_path)?;
+    Ok(conn)
+}
+
+fn search_db_path() -> PathBuf {
+    PathBuf::from(".foundry/search/index.db")
+}
+
+fn split_into_chunks(text: &str, target_len: usize) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut current = String::new();
+    for part in text.split("\n\n") {
+        let p = part.trim();
+        if p.is_empty() {
+            continue;
+        }
+        if !current.is_empty() && current.len() + p.len() + 2 > target_len {
+            out.push(current.trim().to_string());
+            current.clear();
+        }
+        if !current.is_empty() {
+            current.push_str("\n\n");
+        }
+        current.push_str(p);
+    }
+    if !current.trim().is_empty() {
+        out.push(current.trim().to_string());
+    }
+    if out.is_empty() {
+        vec![String::new()]
+    } else {
+        out
+    }
+}
+
+fn normalize_query_for_fts(query: &str) -> String {
+    query
+        .split_whitespace()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn matched_terms(query: &str, terms: &[String]) -> Vec<String> {
+    let query_tokens = tokenize(query);
+    terms
+        .iter()
+        .filter(|t| query_tokens.contains(&normalize_term_key(t)))
+        .cloned()
+        .collect()
+}
+
+fn print_search_table(output: &SearchQueryOutput) {
+    println!("query: {}", output.query);
+    println!("mode: {}", output.mode);
+    if output.hits.is_empty() {
+        println!("hits: (none)");
+        return;
+    }
+    println!("hits:");
+    for hit in &output.hits {
+        let terms = if hit.matched_terms.is_empty() {
+            "-".to_string()
+        } else {
+            hit.matched_terms.join(",")
+        };
+        println!(
+            "  - {} | {} | score={:.4} | terms={} | {}",
+            hit.id, hit.path, hit.score, terms, hit.snippet
+        );
+    }
+}
+
+fn unix_ts() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 fn load_existing_ids(spec_root: &Path) -> Result<HashSet<String>> {

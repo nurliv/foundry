@@ -5,7 +5,7 @@
   "title": "CLI Contract (MVP)",
   "body_md_path": "spec/20-cli-contract.md",
   "terms": [],
-  "hash": "c31ac153c8bfbec5c6538f9838059d610bf8f92cf08493a768e7283803591067",
+  "hash": "e1590e06e119f7a42cfaceae4ae0f8b96410fcd5bfa4507ed0f5989dcc8c2b78",
   "edges": [
     {
       "to": "SPC-002",

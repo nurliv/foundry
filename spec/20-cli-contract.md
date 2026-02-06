@@ -6,6 +6,7 @@
 - `foundry spec lint`
 - `foundry spec link`
 - `foundry spec impact`
+- `foundry spec search`
 
 ## `foundry spec init`
 
@@ -93,3 +94,25 @@ Flags:
 Notes:
 
 - `--depth` limits traversal distance for `reverse_dependents`, `test_coverage_chain`, and `recommended_review_order`.
+
+## `foundry spec search`
+
+Subcommands:
+
+- `index`: build or update search index from `spec/**/*.md` and `spec/**/*.meta.json`
+- `query`: run lexical search (hybrid flag is accepted for forward compatibility)
+- `doctor`: verify index consistency against current node hashes
+
+Examples:
+
+- `foundry spec search index`
+- `foundry spec search query "auth flow" --top-k 10 --format table`
+- `foundry spec search query "auth flow" --format json --mode lexical`
+- `foundry spec search doctor`
+
+Flags:
+
+- `index --rebuild`: full rebuild
+- `query --top-k <n>` default `10`
+- `query --format table|json` default `table`
+- `query --mode lexical|hybrid` default `lexical` (`hybrid` currently falls back to lexical ranking)
