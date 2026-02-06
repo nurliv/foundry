@@ -1,0 +1,18 @@
+{
+  "id": "SPC-001",
+  "type": "feature_requirement",
+  "status": "draft",
+  "title": "Foundry Spec Graph",
+  "body_md_path": "spec/00-index.md",
+  "terms": [],
+  "hash": "6991698b187ec7ad45ae13cdb3f48158472680cd7e8a35a136062a6ed46f6774",
+  "edges": [
+    {
+      "to": "SPC-002",
+      "type": "depends_on",
+      "rationale": "index references model",
+      "confidence": 1.0,
+      "status": "confirmed"
+    }
+  ]
+}

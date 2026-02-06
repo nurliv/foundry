@@ -1,0 +1,10 @@
+{
+  "id": "SPC-002",
+  "type": "feature_requirement",
+  "status": "draft",
+  "title": "Domain Model",
+  "body_md_path": "spec/10-domain-model.md",
+  "terms": [],
+  "hash": "6e383f5761e405b8ccae62d192f4608bebb40afb53a46a7be81279adebd6b0a9",
+  "edges": []
+}

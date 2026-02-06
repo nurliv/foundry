@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://foundry.local/schemas/spec-node-meta.schema.json",
+  "title": "Foundry Spec Node Meta",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "type",
+    "status",
+    "title",
+    "body_md_path",
+    "terms",
+    "hash",
+    "edges"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^SPC-[0-9]{3,}$"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "product_goal",
+        "feature_requirement",
+        "non_functional_requirement",
+        "constraint",
+        "domain_concept",
+        "decision",
+        "workflow",
+        "api_contract",
+        "data_contract",
+        "test_spec"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "review",
+        "active",
+        "deprecated",
+        "archived"
+      ]
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "body_md_path": {
+      "type": "string",
+      "pattern": "^spec/.+\\.md$"
+    },
+    "terms": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/edge"
+      }
+    }
+  },
+  "$defs": {
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "to",
+        "type",
+        "rationale",
+        "confidence",
+        "status"
+      ],
+      "properties": {
+        "to": {
+          "type": "string",
+          "pattern": "^SPC-[0-9]{3,}$"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "depends_on",
+            "refines",
+            "conflicts_with",
+            "tests",
+            "impacts"
+          ]
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "confirmed",
+            "proposed"
+          ]
+        }
+      }
+    }
+  }
+}

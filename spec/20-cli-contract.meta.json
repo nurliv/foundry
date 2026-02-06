@@ -1,0 +1,18 @@
+{
+  "id": "SPC-003",
+  "type": "feature_requirement",
+  "status": "draft",
+  "title": "CLI Contract (MVP)",
+  "body_md_path": "spec/20-cli-contract.md",
+  "terms": [],
+  "hash": "b5775c4cbedeb963af65c69269585bd59c97eb9cea2d3849932d82618a42ef1b",
+  "edges": [
+    {
+      "to": "SPC-002",
+      "type": "tests",
+      "rationale": "cli validates model",
+      "confidence": 1.0,
+      "status": "confirmed"
+    }
+  ]
+}
