@@ -12,3 +12,4 @@ Support the impl-review phase with traceable graph operations and JSON-first evi
 - Updated links/status decisions
 - JSON evidence from foundry commands
 - Follow-up actions for the next phase
+- Final task closure decision evidence (`done` or `blocked`)

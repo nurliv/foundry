@@ -393,21 +393,32 @@ fn init_with_agents_generates_command_templates() {
     let claude = root.join("docs/agents/claude/commands/spec-plan.md");
     let codex_skill = root.join("docs/agents/codex/skills/spec-plan.md");
     let claude_skill = root.join("docs/agents/claude/skills/spec-plan.md");
+    let codex_implement = root.join("docs/agents/codex/commands/implement.md");
+    let codex_impl_review = root.join("docs/agents/codex/commands/impl-review.md");
     assert!(codex.exists(), "missing codex template");
     assert!(claude.exists(), "missing claude template");
     assert!(codex_skill.exists(), "missing codex skill template");
     assert!(claude_skill.exists(), "missing claude skill template");
+    assert!(codex_implement.exists(), "missing codex implement template");
+    assert!(codex_impl_review.exists(), "missing codex impl-review template");
 
     let codex_text = fs::read_to_string(codex).expect("read codex template");
     let claude_text = fs::read_to_string(claude).expect("read claude template");
     let codex_skill_text = fs::read_to_string(codex_skill).expect("read codex skill template");
     let claude_skill_text =
         fs::read_to_string(claude_skill).expect("read claude skill template");
+    let codex_implement_text =
+        fs::read_to_string(codex_implement).expect("read codex implement template");
+    let codex_impl_review_text =
+        fs::read_to_string(codex_impl_review).expect("read codex impl-review template");
     assert!(codex_text.contains("# spec-plan"));
     assert!(codex_text.contains("Codex Overlay: spec-plan"));
     assert!(claude_text.contains("Claude Overlay: spec-plan"));
     assert!(codex_skill_text.contains("Codex Skill Overlay: spec-plan"));
     assert!(claude_skill_text.contains("Claude Skill Overlay: spec-plan"));
+    assert!(codex_implement_text.contains("spec write --id <TASK-ID> --status doing"));
+    assert!(codex_implement_text.contains("spec write --id <TASK-ID> --status done"));
+    assert!(codex_impl_review_text.contains("spec write --id <TASK-ID> --status blocked"));
     assert!(!codex_text.contains("{{"), "placeholder should be rendered");
     assert!(!codex_skill_text.contains("{{"), "placeholder should be rendered");
     let project_name = root

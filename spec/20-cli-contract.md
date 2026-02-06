@@ -131,6 +131,7 @@ Supported template placeholders:
 - `{{project_name}}`: current working directory name
 - `{{main_spec_id}}`: first `product_goal` id if present, otherwise smallest node id, fallback `SPC-001`
 - `{{default_depth}}`: default impact traversal depth (`2`)
+- implement / impl-review command templates should include `spec write --id <TASK-ID> --status ...` examples for task state transitions
 
 ## `foundry spec agent`
 

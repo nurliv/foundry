@@ -12,3 +12,4 @@ Support the implement phase with traceable graph operations and JSON-first evide
 - Updated links/status decisions
 - JSON evidence from foundry commands
 - Follow-up actions for the next phase
+- Explicit task state transition evidence (`todo`/`doing`/`done`)
