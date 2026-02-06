@@ -297,6 +297,60 @@ struct AskOutput {
     gaps: Vec<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+struct RuntimeConfig {
+    ask: AskRuntimeConfig,
+}
+
+impl Default for RuntimeConfig {
+    fn default() -> Self {
+        Self {
+            ask: AskRuntimeConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+struct AskRuntimeConfig {
+    neighbor_limit: usize,
+    snippet_count_in_answer: usize,
+    edge_weight: AskEdgeWeightConfig,
+}
+
+impl Default for AskRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            neighbor_limit: 5,
+            snippet_count_in_answer: 2,
+            edge_weight: AskEdgeWeightConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+struct AskEdgeWeightConfig {
+    depends_on: f64,
+    tests: f64,
+    refines: f64,
+    impacts: f64,
+    conflicts_with: f64,
+}
+
+impl Default for AskEdgeWeightConfig {
+    fn default() -> Self {
+        Self {
+            depends_on: 1.0,
+            tests: 0.8,
+            refines: 0.7,
+            impacts: 0.6,
+            conflicts_with: 1.2,
+        }
+    }
+}
+
 #[derive(Default, Debug)]
 struct SearchIndexSummary {
     indexed: usize,
@@ -937,6 +991,7 @@ fn run_search_query(args: &SearchQueryArgs) -> Result<()> {
 }
 
 fn run_ask(args: &AskArgs) -> Result<()> {
+    let config = load_runtime_config();
     let conn = open_search_db()?;
     ensure_search_schema_readonly(&conn)?;
     let hits = build_search_hits(&conn, &args.question, args.top_k, args.mode)?;
@@ -952,7 +1007,7 @@ fn run_ask(args: &AskArgs) -> Result<()> {
         SearchMode::Hybrid => "hybrid",
     }
     .to_string();
-    let output = synthesize_ask_output(args, mode, hits, &meta_by_id);
+    let output = synthesize_ask_output(args, mode, hits, &meta_by_id, &config.ask);
     match args.format {
         AskFormat::Json => println!("{}", serde_json::to_string_pretty(&output)?),
         AskFormat::Table => print_ask_table(&output),
@@ -1717,6 +1772,7 @@ fn synthesize_ask_output(
     mode: String,
     hits: Vec<SearchHit>,
     meta_by_id: &HashMap<String, SpecNodeMeta>,
+    config: &AskRuntimeConfig,
 ) -> AskOutput {
     if hits.is_empty() {
         return AskOutput {
@@ -1733,7 +1789,12 @@ fn synthesize_ask_output(
         };
     }
 
-    let (related_ids, conflict_risks) = expand_ask_context(&hits, meta_by_id, 5);
+    let (related_ids, conflict_risks) = expand_ask_context(
+        &hits,
+        meta_by_id,
+        config.neighbor_limit,
+        &config.edge_weight,
+    );
     let primary_ids = hits.iter().map(|h| h.id.clone()).collect::<HashSet<_>>();
     let mut citations = hits
         .iter()
@@ -1802,8 +1863,17 @@ fn synthesize_ask_output(
     } else {
         format!("Conflict risks to review: {}.", conflict_risks.join(", "))
     };
+    let snippet_summary = evidence
+        .iter()
+        .take(config.snippet_count_in_answer.max(1))
+        .map(|e| {
+            let short = e.snippet.chars().take(100).collect::<String>();
+            format!("[{}] {}", e.id, short)
+        })
+        .collect::<Vec<_>>()
+        .join(" | ");
     let answer = format!(
-        "Primary relevant specs: {focus_titles}. {related_summary} {risk_summary} Use `spec impact <ID>` on the first cited node for deeper propagation checks."
+        "Primary relevant specs: {focus_titles}. {related_summary} {risk_summary} Evidence highlights: {snippet_summary}. Use `spec impact <ID>` on the first cited node for deeper propagation checks."
     );
 
     let mut gaps = Vec::new();
@@ -1872,9 +1942,10 @@ fn expand_ask_context(
     hits: &[SearchHit],
     meta_by_id: &HashMap<String, SpecNodeMeta>,
     limit: usize,
+    weights: &AskEdgeWeightConfig,
 ) -> (Vec<String>, Vec<String>) {
     let seed_ids = hits.iter().map(|h| h.id.clone()).collect::<HashSet<_>>();
-    let mut related = BTreeSet::new();
+    let mut related_score = HashMap::<String, f64>::new();
     let mut conflicts = BTreeSet::new();
 
     for seed_id in &seed_ids {
@@ -1882,10 +1953,12 @@ fn expand_ask_context(
             for edge in &meta.edges {
                 match edge.edge_type.as_str() {
                     "depends_on" | "tests" | "refines" | "impacts" => {
-                        related.insert(edge.to.clone());
+                        *related_score.entry(edge.to.clone()).or_insert(0.0) +=
+                            edge_weight(edge.edge_type.as_str(), weights);
                     }
                     "conflicts_with" => {
-                        related.insert(edge.to.clone());
+                        *related_score.entry(edge.to.clone()).or_insert(0.0) +=
+                            edge_weight(edge.edge_type.as_str(), weights);
                         conflicts.insert(edge.to.clone());
                     }
                     _ => {}
@@ -1899,10 +1972,12 @@ fn expand_ask_context(
                 }
                 match edge.edge_type.as_str() {
                     "depends_on" | "tests" | "refines" | "impacts" => {
-                        related.insert(id.clone());
+                        *related_score.entry(id.clone()).or_insert(0.0) +=
+                            edge_weight(edge.edge_type.as_str(), weights) * 0.9;
                     }
                     "conflicts_with" => {
-                        related.insert(id.clone());
+                        *related_score.entry(id.clone()).or_insert(0.0) +=
+                            edge_weight(edge.edge_type.as_str(), weights) * 0.9;
                         conflicts.insert(id.clone());
                     }
                     _ => {}
@@ -1912,12 +1987,29 @@ fn expand_ask_context(
     }
 
     for seed in &seed_ids {
-        related.remove(seed);
+        related_score.remove(seed);
         conflicts.remove(seed);
     }
-    let related_vec = related.into_iter().take(limit).collect::<Vec<_>>();
+    let mut related_ranked = related_score.into_iter().collect::<Vec<_>>();
+    related_ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+    let related_vec = related_ranked
+        .into_iter()
+        .map(|(id, _)| id)
+        .take(limit)
+        .collect::<Vec<_>>();
     let conflict_vec = conflicts.into_iter().take(limit).collect::<Vec<_>>();
     (related_vec, conflict_vec)
+}
+
+fn edge_weight(edge_type: &str, w: &AskEdgeWeightConfig) -> f64 {
+    match edge_type {
+        "depends_on" => w.depends_on,
+        "tests" => w.tests,
+        "refines" => w.refines,
+        "impacts" => w.impacts,
+        "conflicts_with" => w.conflicts_with,
+        _ => 0.0,
+    }
 }
 
 fn markdown_head_snippet(path: &str, max_len: usize) -> String {
@@ -1929,6 +2021,15 @@ fn markdown_head_snippet(path: &str, max_len: usize) -> String {
             .replace('\n', " "),
         Err(_) => "(snippet unavailable)".to_string(),
     }
+}
+
+fn load_runtime_config() -> RuntimeConfig {
+    let path = Path::new(".foundry/config.json");
+    let raw = match fs::read_to_string(path) {
+        Ok(v) => v,
+        Err(_) => return RuntimeConfig::default(),
+    };
+    serde_json::from_str::<RuntimeConfig>(&raw).unwrap_or_default()
 }
 
 fn unix_ts() -> i64 {
@@ -2680,10 +2781,18 @@ mod tests {
             matched_terms: vec![],
             snippet: "x".to_string(),
         }];
-        let (related, conflicts) = expand_ask_context(&hits, &map, 10);
+        let (related, conflicts) =
+            expand_ask_context(&hits, &map, 10, &AskEdgeWeightConfig::default());
         assert!(related.contains(&"SPC-002".to_string()));
         assert!(related.contains(&"SPC-003".to_string()));
         assert!(related.contains(&"SPC-004".to_string()));
         assert!(conflicts.contains(&"SPC-003".to_string()));
+    }
+
+    #[test]
+    fn load_runtime_config_defaults_when_missing() {
+        let cfg = load_runtime_config();
+        assert!(cfg.ask.neighbor_limit >= 1);
+        assert!(cfg.ask.snippet_count_in_answer >= 1);
     }
 }

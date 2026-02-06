@@ -146,3 +146,11 @@ Output fields (`--format json`):
 - `citations[]` (`id`, `title`, `path`)
 - `evidence[]` (`id`, `snippet`, `score`)
 - `gaps[]` (empty if enough evidence exists)
+
+Runtime tuning:
+
+- optional file: `.foundry/config.json`
+- supported keys:
+- `ask.neighbor_limit`
+- `ask.snippet_count_in_answer`
+- `ask.edge_weight.depends_on|tests|refines|impacts|conflicts_with`
