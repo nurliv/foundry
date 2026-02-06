@@ -147,6 +147,7 @@ Output fields (`--format json`):
 - `citations[]` (`id`, `title`, `path`)
 - `evidence[]` (`id`, `snippet`, `score`)
 - `explanations[]` (`id`, `reason`) when `--explain` is enabled
+- reason includes retrieval rank/score and token-level match hints (title/snippet) when available
 - `gaps[]` (empty if enough evidence exists)
 
 Runtime tuning:

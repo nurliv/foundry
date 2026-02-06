@@ -1895,7 +1895,7 @@ fn synthesize_ask_output(
     }
 
     let explanations = if args.explain {
-        build_ask_explanations(&hits, &related_ids, meta_by_id)
+        build_ask_explanations(&args.question, &hits, &related_ids, meta_by_id)
     } else {
         Vec::new()
     };
@@ -1962,17 +1962,29 @@ fn print_ask_table(output: &AskOutput) {
 }
 
 fn build_ask_explanations(
+    question: &str,
     hits: &[SearchHit],
     related_ids: &[String],
     meta_by_id: &HashMap<String, SpecNodeMeta>,
 ) -> Vec<AskExplanation> {
     let mut out = Vec::new();
     let primary_ids = hits.iter().map(|h| h.id.clone()).collect::<HashSet<_>>();
+    let query_tokens = query_terms_for_fts(question)
+        .into_iter()
+        .collect::<HashSet<_>>();
 
     for (idx, hit) in hits.iter().enumerate() {
         let mut parts = vec![format!("retrieval rank #{} (score={:.4})", idx + 1, hit.score)];
         if !hit.matched_terms.is_empty() {
             parts.push(format!("matched terms: {}", hit.matched_terms.join(",")));
+        }
+        let title_matches = token_matches_in_text(&query_tokens, &hit.title);
+        let snippet_matches = token_matches_in_text(&query_tokens, &hit.snippet);
+        if !title_matches.is_empty() {
+            parts.push(format!("title token match: {}", title_matches.join(",")));
+        }
+        if !snippet_matches.is_empty() {
+            parts.push(format!("snippet token match: {}", snippet_matches.join(",")));
         }
         out.push(AskExplanation {
             id: hit.id.clone(),
@@ -1994,6 +2006,16 @@ fn build_ask_explanations(
         });
     }
     out
+}
+
+fn token_matches_in_text(query_tokens: &HashSet<String>, text: &str) -> Vec<String> {
+    let text_tokens = query_terms_for_fts(text).into_iter().collect::<HashSet<_>>();
+    let mut matches = query_tokens
+        .intersection(&text_tokens)
+        .cloned()
+        .collect::<Vec<_>>();
+    matches.sort();
+    matches
 }
 
 fn edge_reasons_to_primary(
@@ -2922,7 +2944,12 @@ mod tests {
             matched_terms: vec![],
             snippet: "root".to_string(),
         }];
-        let exps = build_ask_explanations(&hits, &["SPC-002".to_string()], &map);
+        let exps = build_ask_explanations(
+            "root dependency",
+            &hits,
+            &["SPC-002".to_string()],
+            &map,
+        );
         assert!(exps.iter().any(|e| e.id == "SPC-002" && e.reason.contains("graph neighbor")));
     }
 }

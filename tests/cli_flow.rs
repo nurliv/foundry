@@ -638,4 +638,13 @@ fn ask_explain_returns_reason_entries() {
         .as_array()
         .expect("explanations should be array");
     assert!(!explanations.is_empty());
+    let reason_text = explanations
+        .iter()
+        .filter_map(|v| v["reason"].as_str())
+        .collect::<Vec<_>>()
+        .join(" | ");
+    assert!(
+        reason_text.contains("token match"),
+        "expected token match in explanations: {reason_text}"
+    );
 }
