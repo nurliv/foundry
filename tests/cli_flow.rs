@@ -111,6 +111,62 @@ fn init_agent_without_sync_does_not_overwrite_existing_template() {
 }
 
 #[test]
+fn agent_doctor_reports_ok_after_agent_init() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(spec_dir.join("01-example.md"), "# Example\n\ncontent").expect("write markdown");
+
+    let init = run_foundry(
+        &root,
+        &["spec", "init", "--sync", "--agent", "codex", "--agent", "claude"],
+    );
+    assert!(init.status.success(), "init failed");
+
+    let doctor = run_foundry(&root, &["spec", "agent", "doctor", "--format", "json"]);
+    assert!(doctor.status.success(), "agent doctor should succeed");
+    let output: serde_json::Value =
+        serde_json::from_slice(&doctor.stdout).expect("parse doctor output");
+    assert_eq!(output["ok"], true);
+    assert_eq!(output["issues"], serde_json::json!([]));
+}
+
+#[test]
+fn agent_doctor_detects_stale_generated_file() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(spec_dir.join("01-example.md"), "# Example\n\ncontent").expect("write markdown");
+
+    let init = run_foundry(&root, &["spec", "init", "--sync", "--agent", "codex"]);
+    assert!(init.status.success(), "init failed");
+
+    let target = root.join("docs/agents/codex/commands/spec-plan.md");
+    fs::write(&target, "BROKEN\n").expect("write broken template");
+
+    let doctor = run_foundry(
+        &root,
+        &[
+            "spec",
+            "agent",
+            "doctor",
+            "--agent",
+            "codex",
+            "--format",
+            "json",
+        ],
+    );
+    assert_eq!(doctor.status.code(), Some(1), "doctor should fail on stale output");
+    let output: serde_json::Value =
+        serde_json::from_slice(&doctor.stdout).expect("parse doctor output");
+    assert_eq!(output["ok"], false);
+    let issues = output["issues"].as_array().expect("issues should be array");
+    assert!(!issues.is_empty());
+}
+
+#[test]
 fn link_add_and_remove_updates_meta() {
     let root = tempdir().expect("create temp dir");
     let root = root.path();

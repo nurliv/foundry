@@ -78,7 +78,9 @@ Done definition:
 - add `spec init --agent <codex|claude>` command-template generation
 - compose templates from `templates/commands/base` + agent overlays
 - support safe regeneration with `--agent-sync`
+- add `spec agent doctor` for generated template drift detection
 
 Done definition:
 
 - init can generate agent command templates into `docs/agents/<agent>/commands`.
+- agent doctor can detect missing/stale generated templates.

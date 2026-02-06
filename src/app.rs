@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 use crate::cli::*;
+mod agent;
 mod ask;
 mod core;
 mod impact;
@@ -130,6 +131,7 @@ fn run() -> Result<i32> {
                 run_plan(plan)?;
                 Ok(0)
             }
+            SpecSubcommand::Agent(agent) => Ok(agent::run_agent(agent)?),
             SpecSubcommand::Search(search) => {
                 run_search(search)?;
                 Ok(0)

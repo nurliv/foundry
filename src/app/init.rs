@@ -1,22 +1,5 @@
 use super::*;
 
-const COMMAND_PHASES: &[&str] = &[
-    "spec-plan",
-    "spec-review",
-    "design-plan",
-    "design-review",
-    "task-breakdown",
-    "implement",
-    "impl-review",
-];
-
-#[derive(Default)]
-struct AgentTemplateSummary {
-    written: usize,
-    skipped: usize,
-    errors: usize,
-}
-
 pub(super) fn run_init(sync: bool, agents: &[AgentTarget], agent_sync: bool) -> Result<()> {
     let spec_root = Path::new("spec");
     let mut summary = InitSummary::default();
@@ -128,7 +111,7 @@ pub(super) fn run_init(sync: bool, agents: &[AgentTarget], agent_sync: bool) -> 
     }
 
     if !agents.is_empty() {
-        let agent_summary = init_agent_templates(agents, agent_sync);
+        let agent_summary = super::agent::generate_agent_templates(agents, agent_sync);
         println!(
             "agent template summary: written={} skipped={} errors={}",
             agent_summary.written, agent_summary.skipped, agent_summary.errors
@@ -136,82 +119,4 @@ pub(super) fn run_init(sync: bool, agents: &[AgentTarget], agent_sync: bool) -> 
     }
 
     Ok(())
-}
-
-fn init_agent_templates(agents: &[AgentTarget], sync: bool) -> AgentTemplateSummary {
-    let mut summary = AgentTemplateSummary::default();
-    let template_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("templates/commands");
-    let mut uniq = HashSet::new();
-    for agent in agents {
-        if !uniq.insert(*agent) {
-            continue;
-        }
-        let slug = agent_slug(*agent);
-        for phase in COMMAND_PHASES {
-            let base_path = template_root.join(format!("base/{phase}.md"));
-            let overlay_path = template_root.join(format!("overlays/{slug}/{phase}.md"));
-            let out_path = PathBuf::from(format!("docs/agents/{slug}/commands/{phase}.md"));
-            if out_path.exists() && !sync {
-                summary.skipped += 1;
-                continue;
-            }
-            let base = match fs::read_to_string(&base_path) {
-                Ok(v) => v,
-                Err(err) => {
-                    summary.errors += 1;
-                    eprintln!("agent template error reading {}: {err}", base_path.display());
-                    continue;
-                }
-            };
-            let overlay = match fs::read_to_string(&overlay_path) {
-                Ok(v) => v,
-                Err(err) => {
-                    summary.errors += 1;
-                    eprintln!(
-                        "agent template error reading {}: {err}",
-                        overlay_path.display()
-                    );
-                    continue;
-                }
-            };
-
-            let rendered = render_command_template(&base, &overlay);
-            if let Some(parent) = out_path.parent()
-                && let Err(err) = fs::create_dir_all(parent)
-            {
-                summary.errors += 1;
-                eprintln!(
-                    "agent template error creating {}: {err}",
-                    parent.display()
-                );
-                continue;
-            }
-            if let Err(err) = fs::write(&out_path, rendered) {
-                summary.errors += 1;
-                eprintln!(
-                    "agent template error writing {}: {err}",
-                    out_path.display()
-                );
-                continue;
-            }
-            summary.written += 1;
-        }
-    }
-    summary
-}
-
-fn render_command_template(base: &str, overlay: &str) -> String {
-    let mut out = String::new();
-    out.push_str(base.trim_end());
-    out.push_str("\n\n---\n\n");
-    out.push_str(overlay.trim_end());
-    out.push('\n');
-    out
-}
-
-fn agent_slug(agent: AgentTarget) -> &'static str {
-    match agent {
-        AgentTarget::Codex => "codex",
-        AgentTarget::Claude => "claude",
-    }
 }

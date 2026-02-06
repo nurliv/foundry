@@ -7,6 +7,7 @@
 - `foundry spec link`
 - `foundry spec impact`
 - `foundry spec plan`
+- `foundry spec agent`
 - `foundry spec search`
 - `foundry spec ask`
 
@@ -34,6 +35,35 @@ Generated paths (`--agent`):
 
 - `docs/agents/<agent>/commands/*.md` from
   `templates/commands/base/*.md` + `templates/commands/overlays/<agent>/*.md`
+
+## `foundry spec agent`
+
+Subcommands:
+
+- `doctor`: validate generated agent command templates against current source templates
+
+Examples:
+
+- `foundry spec agent doctor`
+- `foundry spec agent doctor --agent codex --format json`
+
+Rules:
+
+- default agents: `codex`, `claude` when `--agent` is omitted
+- compares generated files under `docs/agents/<agent>/commands/*.md`
+  with rendered content from `templates/commands/base/*.md` and
+  `templates/commands/overlays/<agent>/*.md`
+
+Exit codes:
+
+- `0`: no issue
+- `1`: missing/stale template output found
+
+Output fields (`doctor --format json`):
+
+- `ok`
+- `checked`
+- `issues[]` (`agent`, `phase`, `kind`, `detail`)
 
 ## `foundry spec lint`
 

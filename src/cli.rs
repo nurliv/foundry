@@ -26,6 +26,7 @@ pub(crate) enum SpecSubcommand {
     Link(LinkCommand),
     Impact(ImpactArgs),
     Plan(PlanCommand),
+    Agent(AgentCommand),
     Search(SearchCommand),
     Ask(AskArgs),
 }
@@ -99,6 +100,31 @@ pub(crate) struct PlanBatchesArgs {
 
 #[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PlanFormat {
+    Table,
+    Json,
+}
+
+#[derive(Args, Debug)]
+pub(crate) struct AgentCommand {
+    #[command(subcommand)]
+    pub(crate) command: AgentSubcommand,
+}
+
+#[derive(Subcommand, Debug)]
+pub(crate) enum AgentSubcommand {
+    Doctor(AgentDoctorArgs),
+}
+
+#[derive(Args, Debug)]
+pub(crate) struct AgentDoctorArgs {
+    #[arg(long, value_enum)]
+    pub(crate) agent: Vec<AgentTarget>,
+    #[arg(long, value_enum, default_value_t = AgentFormat::Table)]
+    pub(crate) format: AgentFormat,
+}
+
+#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AgentFormat {
     Table,
     Json,
 }
