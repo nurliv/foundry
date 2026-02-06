@@ -25,6 +25,11 @@ Behavior:
 - Use `--sync` to rewrite generated fields (`title`, `hash`, path).
 - Optional: `--agent codex|claude` can be specified multiple times to generate agent command templates.
 - `--agent-sync` overwrites existing generated agent template files.
+- Template source can be selected with:
+- `--template-source local|github` (default `github`)
+- `--template-repo <git_url>` (default `https://github.com/nurliv/foundry.git`)
+- `--template-ref <git_ref>` (default `main`)
+- If github fetch fails, generation falls back to local `templates/`.
 
 Output:
 
@@ -54,10 +59,12 @@ Examples:
 
 - `foundry spec agent doctor`
 - `foundry spec agent doctor --agent codex --format json`
+- `foundry spec agent doctor --template-source local --format json`
 
 Rules:
 
 - default agents: `codex`, `claude` when `--agent` is omitted
+- template source options are the same as `spec init`
 - compares generated files under:
 - `docs/agents/<agent>/commands/*.md`
 - `docs/agents/<agent>/skills/*.md`

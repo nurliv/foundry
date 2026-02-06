@@ -65,6 +65,8 @@ fn init_with_agents_generates_command_templates() {
             "spec",
             "init",
             "--sync",
+            "--template-source",
+            "local",
             "--agent",
             "codex",
             "--agent",
@@ -114,13 +116,34 @@ fn init_agent_without_sync_does_not_overwrite_existing_template() {
     fs::create_dir_all(&spec_dir).expect("create spec dir");
     fs::write(spec_dir.join("01-example.md"), "# Example\n\ncontent").expect("write markdown");
 
-    let first = run_foundry(&root, &["spec", "init", "--sync", "--agent", "codex"]);
+    let first = run_foundry(
+        &root,
+        &[
+            "spec",
+            "init",
+            "--sync",
+            "--template-source",
+            "local",
+            "--agent",
+            "codex",
+        ],
+    );
     assert!(first.status.success(), "first init failed");
 
     let target = root.join("docs/agents/codex/commands/spec-plan.md");
     fs::write(&target, "CUSTOM\n").expect("write custom");
 
-    let second = run_foundry(&root, &["spec", "init", "--agent", "codex"]);
+    let second = run_foundry(
+        &root,
+        &[
+            "spec",
+            "init",
+            "--template-source",
+            "local",
+            "--agent",
+            "codex",
+        ],
+    );
     assert!(second.status.success(), "second init failed");
 
     let text = fs::read_to_string(&target).expect("read template");
@@ -137,11 +160,32 @@ fn agent_doctor_reports_ok_after_agent_init() {
 
     let init = run_foundry(
         &root,
-        &["spec", "init", "--sync", "--agent", "codex", "--agent", "claude"],
+        &[
+            "spec",
+            "init",
+            "--sync",
+            "--template-source",
+            "local",
+            "--agent",
+            "codex",
+            "--agent",
+            "claude",
+        ],
     );
     assert!(init.status.success(), "init failed");
 
-    let doctor = run_foundry(&root, &["spec", "agent", "doctor", "--format", "json"]);
+    let doctor = run_foundry(
+        &root,
+        &[
+            "spec",
+            "agent",
+            "doctor",
+            "--template-source",
+            "local",
+            "--format",
+            "json",
+        ],
+    );
     assert!(doctor.status.success(), "agent doctor should succeed");
     let output: serde_json::Value =
         serde_json::from_slice(&doctor.stdout).expect("parse doctor output");
@@ -157,7 +201,18 @@ fn agent_doctor_detects_stale_generated_file() {
     fs::create_dir_all(&spec_dir).expect("create spec dir");
     fs::write(spec_dir.join("01-example.md"), "# Example\n\ncontent").expect("write markdown");
 
-    let init = run_foundry(&root, &["spec", "init", "--sync", "--agent", "codex"]);
+    let init = run_foundry(
+        &root,
+        &[
+            "spec",
+            "init",
+            "--sync",
+            "--template-source",
+            "local",
+            "--agent",
+            "codex",
+        ],
+    );
     assert!(init.status.success(), "init failed");
 
     let target = root.join("docs/agents/codex/commands/spec-plan.md");
@@ -169,6 +224,8 @@ fn agent_doctor_detects_stale_generated_file() {
             "spec",
             "agent",
             "doctor",
+            "--template-source",
+            "local",
             "--agent",
             "codex",
             "--format",

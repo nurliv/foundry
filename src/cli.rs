@@ -39,6 +39,12 @@ pub(crate) struct InitArgs {
     pub(crate) agent: Vec<AgentTarget>,
     #[arg(long)]
     pub(crate) agent_sync: bool,
+    #[arg(long, value_enum, default_value_t = TemplateSource::Github)]
+    pub(crate) template_source: TemplateSource,
+    #[arg(long, default_value = "https://github.com/nurliv/foundry.git")]
+    pub(crate) template_repo: String,
+    #[arg(long, default_value = "main")]
+    pub(crate) template_ref: String,
 }
 
 #[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -121,12 +127,24 @@ pub(crate) struct AgentDoctorArgs {
     pub(crate) agent: Vec<AgentTarget>,
     #[arg(long, value_enum, default_value_t = AgentFormat::Table)]
     pub(crate) format: AgentFormat,
+    #[arg(long, value_enum, default_value_t = TemplateSource::Github)]
+    pub(crate) template_source: TemplateSource,
+    #[arg(long, default_value = "https://github.com/nurliv/foundry.git")]
+    pub(crate) template_repo: String,
+    #[arg(long, default_value = "main")]
+    pub(crate) template_ref: String,
 }
 
 #[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AgentFormat {
     Table,
     Json,
+}
+
+#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TemplateSource {
+    Local,
+    Github,
 }
 
 #[derive(Args, Debug)]

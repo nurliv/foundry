@@ -1,4 +1,5 @@
 use super::*;
+use std::process::Command;
 
 const TEMPLATE_PHASES: &[&str] = &[
     "spec-plan",
@@ -43,6 +44,12 @@ pub(super) struct AgentTemplateSummary {
     pub(super) errors: usize,
 }
 
+pub(super) struct TemplateConfig {
+    pub(super) source: TemplateSource,
+    pub(super) repo: String,
+    pub(super) git_ref: String,
+}
+
 #[derive(Debug, Serialize)]
 struct AgentDoctorIssue {
     agent: String,
@@ -61,12 +68,24 @@ struct AgentDoctorOutput {
 
 pub(super) fn run_agent(agent: AgentCommand) -> Result<i32> {
     match agent.command {
-        AgentSubcommand::Doctor(args) => run_agent_doctor(&args),
+        AgentSubcommand::Doctor(args) => {
+            let config = TemplateConfig {
+                source: args.template_source,
+                repo: args.template_repo.clone(),
+                git_ref: args.template_ref.clone(),
+            };
+            run_agent_doctor(&args, &config)
+        }
     }
 }
 
-pub(super) fn generate_agent_templates(agents: &[AgentTarget], sync: bool) -> AgentTemplateSummary {
+pub(super) fn generate_agent_templates(
+    agents: &[AgentTarget],
+    sync: bool,
+    config: &TemplateConfig,
+) -> AgentTemplateSummary {
     let mut summary = AgentTemplateSummary::default();
+    let template_base_root = resolve_template_base_root(config);
     let context = build_template_context();
     let mut uniq = HashSet::new();
     for agent in agents {
@@ -75,9 +94,7 @@ pub(super) fn generate_agent_templates(agents: &[AgentTarget], sync: bool) -> Ag
         }
         let slug = agent_slug(*agent);
         for artifact in TEMPLATE_ARTIFACTS {
-            let template_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("templates")
-                .join(artifact.template_subdir);
+            let template_root = template_base_root.join(artifact.template_subdir);
             for phase in TEMPLATE_PHASES {
                 let base_path = template_root.join(format!("base/{phase}.md"));
                 let overlay_path = template_root.join(format!("overlays/{slug}/{phase}.md"));
@@ -127,7 +144,7 @@ pub(super) fn generate_agent_templates(agents: &[AgentTarget], sync: bool) -> Ag
     summary
 }
 
-fn run_agent_doctor(args: &AgentDoctorArgs) -> Result<i32> {
+fn run_agent_doctor(args: &AgentDoctorArgs, config: &TemplateConfig) -> Result<i32> {
     let agents = if args.agent.is_empty() {
         vec![AgentTarget::Codex, AgentTarget::Claude]
     } else {
@@ -139,6 +156,7 @@ fn run_agent_doctor(args: &AgentDoctorArgs) -> Result<i32> {
         .filter(|a| uniq.insert(*a))
         .collect::<Vec<_>>();
     let context = build_template_context();
+    let template_base_root = resolve_template_base_root(config);
 
     let mut issues = Vec::<AgentDoctorIssue>::new();
     let mut checked = 0usize;
@@ -146,9 +164,7 @@ fn run_agent_doctor(args: &AgentDoctorArgs) -> Result<i32> {
     for agent in agents {
         let slug = agent_slug(agent).to_string();
         for artifact in TEMPLATE_ARTIFACTS {
-            let template_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("templates")
-                .join(artifact.template_subdir);
+            let template_root = template_base_root.join(artifact.template_subdir);
             for phase in TEMPLATE_PHASES {
                 checked += 1;
                 let base_path = template_root.join(format!("base/{phase}.md"));
@@ -231,6 +247,77 @@ fn run_agent_doctor(args: &AgentDoctorArgs) -> Result<i32> {
     } else {
         Ok(1)
     }
+}
+
+fn resolve_template_base_root(config: &TemplateConfig) -> PathBuf {
+    let local_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("templates");
+    match config.source {
+        TemplateSource::Local => local_root,
+        TemplateSource::Github => match sync_templates_from_github(config) {
+            Ok(path) => path.join("templates"),
+            Err(err) => {
+                eprintln!(
+                    "agent template warning: failed to fetch templates from github ({err}). fallback to local templates."
+                );
+                local_root
+            }
+        },
+    }
+}
+
+fn sync_templates_from_github(config: &TemplateConfig) -> Result<PathBuf> {
+    let cache_root = PathBuf::from(".foundry/template-sources");
+    fs::create_dir_all(&cache_root)?;
+    let key = template_cache_key(config);
+    let repo_dir = cache_root.join(key);
+
+    if !repo_dir.exists() {
+        let status = Command::new("git")
+            .args([
+                "clone",
+                "--depth",
+                "1",
+                "--branch",
+                &config.git_ref,
+                &config.repo,
+            ])
+            .arg(&repo_dir)
+            .status()
+            .with_context(|| "failed to run git clone for template source")?;
+        if !status.success() {
+            anyhow::bail!("git clone failed for {}", config.repo);
+        }
+        return Ok(repo_dir);
+    }
+
+    let fetch_status = Command::new("git")
+        .arg("-C")
+        .arg(&repo_dir)
+        .args(["fetch", "--depth", "1", "origin", &config.git_ref])
+        .status()
+        .with_context(|| "failed to run git fetch for template source")?;
+    if !fetch_status.success() {
+        anyhow::bail!("git fetch failed for {}", config.repo);
+    }
+
+    let checkout_status = Command::new("git")
+        .arg("-C")
+        .arg(&repo_dir)
+        .args(["checkout", "--force", "FETCH_HEAD"])
+        .status()
+        .with_context(|| "failed to run git checkout for template source")?;
+    if !checkout_status.success() {
+        anyhow::bail!("git checkout FETCH_HEAD failed");
+    }
+    Ok(repo_dir)
+}
+
+fn template_cache_key(config: &TemplateConfig) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(config.repo.as_bytes());
+    hasher.update(b"\n");
+    hasher.update(config.git_ref.as_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
 fn print_agent_doctor_table(output: &AgentDoctorOutput) {

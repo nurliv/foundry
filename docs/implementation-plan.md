@@ -80,6 +80,7 @@ Done definition:
 - support basic placeholder substitution (`project_name`, `main_spec_id`, `default_depth`)
 - support safe regeneration with `--agent-sync`
 - add `spec agent doctor` for generated template drift detection
+- support template source selection (`local|github`) with github-fetch fallback to local templates
 
 Done definition:
 

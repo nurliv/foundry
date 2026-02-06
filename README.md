@@ -64,6 +64,19 @@ Force regeneration:
 foundry spec init --agent codex --agent claude --agent-sync
 ```
 
+Use local templates explicitly (recommended for offline/CI):
+
+```bash
+foundry spec init --agent codex --template-source local
+```
+
+Template source options:
+
+- `--template-source local|github` (default `github`)
+- `--template-repo <git_url>` (default `https://github.com/nurliv/foundry.git`)
+- `--template-ref <git_ref>` (default `main`)
+- github fetch failure falls back to local `templates/`
+
 Validate generated outputs against templates:
 
 ```bash
@@ -100,4 +113,3 @@ Supported placeholders:
 ```bash
 cargo test
 ```
-

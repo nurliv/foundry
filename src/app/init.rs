@@ -1,6 +1,13 @@
 use super::*;
 
-pub(super) fn run_init(sync: bool, agents: &[AgentTarget], agent_sync: bool) -> Result<()> {
+pub(super) fn run_init(
+    sync: bool,
+    agents: &[AgentTarget],
+    agent_sync: bool,
+    template_source: TemplateSource,
+    template_repo: &str,
+    template_ref: &str,
+) -> Result<()> {
     let spec_root = Path::new("spec");
     let mut summary = InitSummary::default();
 
@@ -111,7 +118,12 @@ pub(super) fn run_init(sync: bool, agents: &[AgentTarget], agent_sync: bool) -> 
     }
 
     if !agents.is_empty() {
-        let agent_summary = super::agent::generate_agent_templates(agents, agent_sync);
+        let config = super::agent::TemplateConfig {
+            source: template_source,
+            repo: template_repo.to_string(),
+            git_ref: template_ref.to_string(),
+        };
+        let agent_summary = super::agent::generate_agent_templates(agents, agent_sync, &config);
         println!(
             "agent template summary: written={} skipped={} errors={}",
             agent_summary.written, agent_summary.skipped, agent_summary.errors
