@@ -116,3 +116,96 @@ fn link_add_and_remove_updates_meta() {
 
     fs::remove_dir_all(&root).expect("cleanup temp dir");
 }
+
+#[test]
+fn impact_supports_depth_and_json_format() {
+    let root = unique_temp_dir();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(spec_dir.join("a.md"), "# A").expect("write a");
+    fs::write(spec_dir.join("b.md"), "# B").expect("write b");
+    fs::write(spec_dir.join("c.md"), "# C").expect("write c");
+
+    let init = run_foundry(&root, &["spec", "init", "--sync"]);
+    assert!(init.status.success(), "init failed");
+
+    let add_ab = run_foundry(
+        &root,
+        &[
+            "spec",
+            "link",
+            "add",
+            "--from",
+            "SPC-001",
+            "--to",
+            "SPC-002",
+            "--type",
+            "depends_on",
+            "--rationale",
+            "a->b",
+        ],
+    );
+    assert!(add_ab.status.success(), "add a->b failed");
+
+    let add_bc = run_foundry(
+        &root,
+        &[
+            "spec",
+            "link",
+            "add",
+            "--from",
+            "SPC-002",
+            "--to",
+            "SPC-003",
+            "--type",
+            "depends_on",
+            "--rationale",
+            "b->c",
+        ],
+    );
+    assert!(add_bc.status.success(), "add b->c failed");
+
+    let impact_depth_1 = run_foundry(
+        &root,
+        &[
+            "spec",
+            "impact",
+            "SPC-001",
+            "--depth",
+            "1",
+            "--format",
+            "json",
+        ],
+    );
+    assert!(impact_depth_1.status.success(), "impact depth1 failed");
+    let json_depth_1: serde_json::Value =
+        serde_json::from_slice(&impact_depth_1.stdout).expect("parse depth1 json");
+    let order_depth_1 = json_depth_1["recommended_review_order"]
+        .as_array()
+        .expect("review order should be an array");
+    assert_eq!(order_depth_1.len(), 2);
+    assert_eq!(json_depth_1["depth"], 1);
+
+    let impact_depth_2 = run_foundry(
+        &root,
+        &[
+            "spec",
+            "impact",
+            "SPC-001",
+            "--depth",
+            "2",
+            "--format",
+            "json",
+        ],
+    );
+    assert!(impact_depth_2.status.success(), "impact depth2 failed");
+    let json_depth_2: serde_json::Value =
+        serde_json::from_slice(&impact_depth_2.stdout).expect("parse depth2 json");
+    let order_depth_2 = json_depth_2["recommended_review_order"]
+        .as_array()
+        .expect("review order should be an array");
+    assert_eq!(order_depth_2.len(), 3);
+    assert_eq!(json_depth_2["depth"], 2);
+
+    fs::remove_dir_all(&root).expect("cleanup temp dir");
+}

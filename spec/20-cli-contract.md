@@ -87,3 +87,7 @@ Flags:
 
 - `--depth <n>` default `2`
 - `--format table|json` default `table`
+
+Notes:
+
+- `--depth` limits traversal distance for `reverse_dependents`, `test_coverage_chain`, and `recommended_review_order`.
