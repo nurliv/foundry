@@ -94,7 +94,7 @@ pub(crate) struct DeriveTasksArgs {
 #[derive(Args, Debug)]
 pub(crate) struct WriteArgs {
     #[arg(long)]
-    pub(crate) path: String,
+    pub(crate) path: Option<String>,
     #[arg(long)]
     pub(crate) id: Option<String>,
     #[arg(long = "type")]

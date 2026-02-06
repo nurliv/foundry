@@ -54,10 +54,13 @@ Usage:
 
 - `foundry spec write --path spec/10-auth.md --body "# Auth\n\n..." --type feature_requirement --status draft`
 - `foundry spec write --path spec/40-design-auth.md --body-file /tmp/design.md --type component_design --status review`
+- `foundry spec write --id SPC-010 --status doing`
 
 Rules:
 
-- `--path` must be under `spec/` and end with `.md`
+- either `--path` or `--id` is required
+- if `--path` is provided, it must be under `spec/` and end with `.md`
+- if only `--id` is provided, markdown path is resolved from existing meta
 - `--body` and `--body-file` are mutually exclusive
 - when meta exists, unspecified fields are preserved (including existing `edges`)
 - when meta is missing, defaults are used (`type=feature_requirement`, `status=draft`, auto `id`)
@@ -66,7 +69,7 @@ Rules:
 
 Flags:
 
-- `--path <spec/*.md>` required
+- `--path <spec/*.md>` optional (required for create flow)
 - `--id <SPC-xxx>` optional explicit id
 - `--type <node_type>` optional
 - `--status <node_status>` optional

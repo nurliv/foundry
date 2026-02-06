@@ -38,6 +38,7 @@ foundry spec lint --format json
 
 # 4) Write/update one node
 foundry spec write --path spec/10-auth.md --body "# Auth\n\n..." --type feature_requirement --status draft
+foundry spec write --id SPC-001 --status doing
 
 # 5) Derive design from spec node
 foundry spec derive design --from SPC-001 --path spec/40-auth-design.md --type component_design --status review

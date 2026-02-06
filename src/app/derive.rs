@@ -39,7 +39,7 @@ fn run_derive_design(args: &DeriveDesignArgs) -> Result<()> {
     };
 
     let write_args = WriteArgs {
-        path,
+        path: Some(path),
         id: None,
         node_type: Some(args.node_type.clone()),
         status: Some(args.status.clone()),
@@ -101,7 +101,7 @@ fn run_derive_tasks(args: &DeriveTasksArgs) -> Result<()> {
     };
 
     let write_args = WriteArgs {
-        path,
+        path: Some(path),
         id: None,
         node_type: Some(args.node_type.clone()),
         status: Some(args.status.clone()),

@@ -156,6 +156,47 @@ fn write_updates_existing_meta_without_losing_edges() {
 }
 
 #[test]
+fn write_updates_node_by_id_without_path() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(spec_dir.join("a.md"), "# A\n\nold").expect("write a");
+
+    let init = run_foundry(&root, &["spec", "init", "--sync"]);
+    assert!(init.status.success(), "init failed");
+
+    let write = run_foundry(
+        &root,
+        &[
+            "spec",
+            "write",
+            "--id",
+            "SPC-001",
+            "--status",
+            "doing",
+            "--body",
+            "# A In Progress\n\nnew body",
+        ],
+    );
+    assert!(
+        write.status.success(),
+        "write by id failed: {}",
+        String::from_utf8_lossy(&write.stderr)
+    );
+
+    let md = fs::read_to_string(spec_dir.join("a.md")).expect("read markdown");
+    assert!(md.contains("A In Progress"));
+
+    let meta: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(spec_dir.join("a.meta.json")).expect("read meta"))
+            .expect("parse meta");
+    assert_eq!(meta["id"], "SPC-001");
+    assert_eq!(meta["status"], "doing");
+    assert_eq!(meta["title"], "A In Progress");
+}
+
+#[test]
 fn derive_design_creates_design_node_and_refines_edge() {
     let root = tempdir().expect("create temp dir");
     let root = root.path();

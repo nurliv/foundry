@@ -12,3 +12,5 @@ Drive this phase with graph-traceable decisions and reproducible CLI evidence.
 - foundry spec plan ready --format json
 - foundry spec ask "implementation guidance for <TASK-ID>" --format json
 - foundry spec impact <TASK-ID> --format json
+- foundry spec write --id <TASK-ID> --status doing
+- foundry spec write --id <TASK-ID> --status done

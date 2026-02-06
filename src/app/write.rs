@@ -4,13 +4,17 @@ pub(super) fn run_write(args: &WriteArgs) -> Result<String> {
     if args.body.is_some() && args.body_file.is_some() {
         anyhow::bail!("--body and --body-file cannot be used together");
     }
+    if args.path.is_none() && args.id.is_none() {
+        anyhow::bail!("either --path or --id is required");
+    }
+    let md_path = resolve_markdown_path(args)?;
 
-    let md_path = PathBuf::from(&args.path);
-    validate_markdown_path(&md_path)?;
-
-    if let Some(parent) = md_path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("failed creating directory: {}", parent.display()))?;
+    if args.path.is_some() {
+        validate_markdown_path(&md_path)?;
+        if let Some(parent) = md_path.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("failed creating directory: {}", parent.display()))?;
+        }
     }
 
     if let Some(body_file) = &args.body_file {
@@ -131,4 +135,24 @@ fn validate_node_id(id: &str) -> Result<()> {
         anyhow::bail!("invalid id format: {id}");
     }
     Ok(())
+}
+
+fn resolve_markdown_path(args: &WriteArgs) -> Result<PathBuf> {
+    if let Some(path) = &args.path {
+        return Ok(PathBuf::from(path));
+    }
+    let id = args.id.as_deref().expect("checked by caller");
+    validate_node_id(id)?;
+    let spec_root = Path::new("spec");
+    if !spec_root.exists() {
+        anyhow::bail!("spec/ directory not found");
+    }
+    let mut lint = LintState::default();
+    let metas = load_all_meta(spec_root, &mut lint)?;
+    let meta = metas
+        .into_iter()
+        .map(|(_, m)| m)
+        .find(|m| m.id == id)
+        .with_context(|| format!("node not found for --id: {id}"))?;
+    Ok(PathBuf::from(meta.body_md_path))
 }
