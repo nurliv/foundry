@@ -581,3 +581,61 @@ fn ask_includes_neighbor_citations_from_graph_edges() {
     assert!(ids.contains(&"SPC-001".to_string()));
     assert!(ids.contains(&"SPC-002".to_string()));
 }
+
+#[test]
+fn ask_explain_returns_reason_entries() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(spec_dir.join("a.md"), "# Auth\n\nAuthentication spec flow.").expect("write a");
+    fs::write(spec_dir.join("b.md"), "# Session\n\nSession dependency spec.").expect("write b");
+
+    let init = run_foundry(&root, &["spec", "init", "--sync"]);
+    assert!(init.status.success(), "init failed");
+    let add = run_foundry(
+        &root,
+        &[
+            "spec",
+            "link",
+            "add",
+            "--from",
+            "SPC-001",
+            "--to",
+            "SPC-002",
+            "--type",
+            "depends_on",
+            "--rationale",
+            "auth depends on session",
+        ],
+    );
+    assert!(add.status.success(), "link failed");
+    let index = run_foundry(&root, &["spec", "search", "index", "--rebuild"]);
+    assert!(index.status.success(), "index failed");
+
+    let ask = run_foundry(
+        &root,
+        &[
+            "spec",
+            "ask",
+            "auth flow",
+            "--format",
+            "json",
+            "--top-k",
+            "1",
+            "--explain",
+        ],
+    );
+    assert!(
+        ask.status.success(),
+        "ask failed:\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&ask.stdout),
+        String::from_utf8_lossy(&ask.stderr)
+    );
+    let output: serde_json::Value =
+        serde_json::from_slice(&ask.stdout).expect("parse ask output");
+    let explanations = output["explanations"]
+        .as_array()
+        .expect("explanations should be array");
+    assert!(!explanations.is_empty());
+}

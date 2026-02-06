@@ -111,6 +111,8 @@ struct AskArgs {
     mode: SearchMode,
     #[arg(long, value_enum, default_value_t = AskFormat::Table)]
     format: AskFormat,
+    #[arg(long)]
+    explain: bool,
 }
 
 #[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
@@ -294,7 +296,14 @@ struct AskOutput {
     confidence: f64,
     citations: Vec<AskCitation>,
     evidence: Vec<AskEvidence>,
+    explanations: Vec<AskExplanation>,
     gaps: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct AskExplanation {
+    id: String,
+    reason: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1782,6 +1791,7 @@ fn synthesize_ask_output(
             confidence: 0.0,
             citations: Vec::new(),
             evidence: Vec::new(),
+            explanations: Vec::new(),
             gaps: vec![
                 "No matching spec nodes. Try a broader query or run `foundry spec search index --rebuild`."
                     .to_string(),
@@ -1884,6 +1894,12 @@ fn synthesize_ask_output(
         gaps.push("Limited cross-spec context: consider adding more explicit links.".to_string());
     }
 
+    let explanations = if args.explain {
+        build_ask_explanations(&hits, &related_ids, meta_by_id)
+    } else {
+        Vec::new()
+    };
+
     AskOutput {
         question: args.question.clone(),
         mode,
@@ -1891,6 +1907,7 @@ fn synthesize_ask_output(
         confidence,
         citations,
         evidence,
+        explanations,
         gaps,
     }
 }
@@ -1936,6 +1953,72 @@ fn print_ask_table(output: &AskOutput) {
             println!("  - {gap}");
         }
     }
+    if !output.explanations.is_empty() {
+        println!("explanations:");
+        for exp in &output.explanations {
+            println!("  - {} | {}", exp.id, exp.reason);
+        }
+    }
+}
+
+fn build_ask_explanations(
+    hits: &[SearchHit],
+    related_ids: &[String],
+    meta_by_id: &HashMap<String, SpecNodeMeta>,
+) -> Vec<AskExplanation> {
+    let mut out = Vec::new();
+    let primary_ids = hits.iter().map(|h| h.id.clone()).collect::<HashSet<_>>();
+
+    for (idx, hit) in hits.iter().enumerate() {
+        let mut parts = vec![format!("retrieval rank #{} (score={:.4})", idx + 1, hit.score)];
+        if !hit.matched_terms.is_empty() {
+            parts.push(format!("matched terms: {}", hit.matched_terms.join(",")));
+        }
+        out.push(AskExplanation {
+            id: hit.id.clone(),
+            reason: parts.join("; "),
+        });
+    }
+
+    for related in related_ids {
+        if primary_ids.contains(related) {
+            continue;
+        }
+        let edge_reasons = edge_reasons_to_primary(related, &primary_ids, meta_by_id);
+        if edge_reasons.is_empty() {
+            continue;
+        }
+        out.push(AskExplanation {
+            id: related.clone(),
+            reason: format!("graph neighbor via {}", edge_reasons.join(", ")),
+        });
+    }
+    out
+}
+
+fn edge_reasons_to_primary(
+    candidate_id: &str,
+    primary_ids: &HashSet<String>,
+    meta_by_id: &HashMap<String, SpecNodeMeta>,
+) -> Vec<String> {
+    let mut reasons = BTreeSet::new();
+    if let Some(meta) = meta_by_id.get(candidate_id) {
+        for edge in &meta.edges {
+            if primary_ids.contains(&edge.to) {
+                reasons.insert(format!("{} -> {} ({})", candidate_id, edge.to, edge.edge_type));
+            }
+        }
+    }
+    for primary_id in primary_ids {
+        if let Some(primary) = meta_by_id.get(primary_id) {
+            for edge in &primary.edges {
+                if edge.to == candidate_id {
+                    reasons.insert(format!("{} -> {} ({})", primary_id, candidate_id, edge.edge_type));
+                }
+            }
+        }
+    }
+    reasons.into_iter().collect()
 }
 
 fn expand_ask_context(
@@ -2794,5 +2877,52 @@ mod tests {
         let cfg = load_runtime_config();
         assert!(cfg.ask.neighbor_limit >= 1);
         assert!(cfg.ask.snippet_count_in_answer >= 1);
+    }
+
+    #[test]
+    fn build_ask_explanations_contains_graph_neighbor_reason() {
+        let mut map = HashMap::new();
+        map.insert(
+            "SPC-001".to_string(),
+            SpecNodeMeta {
+                id: "SPC-001".to_string(),
+                node_type: "feature_requirement".to_string(),
+                status: "active".to_string(),
+                title: "Root".to_string(),
+                body_md_path: "spec/root.md".to_string(),
+                terms: vec![],
+                hash: "0".repeat(64),
+                edges: vec![SpecEdge {
+                    to: "SPC-002".to_string(),
+                    edge_type: "depends_on".to_string(),
+                    rationale: "dep".to_string(),
+                    confidence: 1.0,
+                    status: "confirmed".to_string(),
+                }],
+            },
+        );
+        map.insert(
+            "SPC-002".to_string(),
+            SpecNodeMeta {
+                id: "SPC-002".to_string(),
+                node_type: "feature_requirement".to_string(),
+                status: "active".to_string(),
+                title: "Dep".to_string(),
+                body_md_path: "spec/dep.md".to_string(),
+                terms: vec![],
+                hash: "0".repeat(64),
+                edges: vec![],
+            },
+        );
+        let hits = vec![SearchHit {
+            id: "SPC-001".to_string(),
+            title: "Root".to_string(),
+            path: "spec/root.md".to_string(),
+            score: 0.5,
+            matched_terms: vec![],
+            snippet: "root".to_string(),
+        }];
+        let exps = build_ask_explanations(&hits, &["SPC-002".to_string()], &map);
+        assert!(exps.iter().any(|e| e.id == "SPC-002" && e.reason.contains("graph neighbor")));
     }
 }

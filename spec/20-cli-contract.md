@@ -138,6 +138,7 @@ Flags:
 - `--top-k <n>` default `5`
 - `--mode lexical|hybrid` default `hybrid`
 - `--format table|json` default `table`
+- `--explain` include per-citation selection reasons
 
 Output fields (`--format json`):
 
@@ -145,6 +146,7 @@ Output fields (`--format json`):
 - `confidence`
 - `citations[]` (`id`, `title`, `path`)
 - `evidence[]` (`id`, `snippet`, `score`)
+- `explanations[]` (`id`, `reason`) when `--explain` is enabled
 - `gaps[]` (empty if enough evidence exists)
 
 Runtime tuning:
