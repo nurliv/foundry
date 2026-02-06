@@ -97,7 +97,7 @@ fn run() -> Result<i32> {
                 run_init(args.sync)?;
                 Ok(0)
             }
-            SpecSubcommand::Lint => Ok(run_lint()?),
+            SpecSubcommand::Lint(args) => Ok(run_lint(&args)?),
             SpecSubcommand::Link(link) => {
                 run_link(link)?;
                 Ok(0)

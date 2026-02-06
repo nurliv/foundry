@@ -21,6 +21,7 @@ Done definition:
 Done definition:
 
 - `foundry spec lint` returns stable exit codes and actionable messages.
+- `foundry spec lint --format json` returns machine-readable diagnostics.
 
 ## Milestone 3: Edge CRUD
 

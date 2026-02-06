@@ -1,9 +1,25 @@
 use super::*;
 
-pub(super) fn run_lint() -> Result<i32> {
+#[derive(Debug, Serialize)]
+struct LintOutput {
+    ok: bool,
+    error_count: usize,
+    errors: Vec<String>,
+}
+
+pub(super) fn run_lint(args: &LintArgs) -> Result<i32> {
     let spec_root = Path::new("spec");
     if !spec_root.exists() {
-        println!("lint: spec/ directory not found");
+        if args.format == LintFormat::Json {
+            let output = LintOutput {
+                ok: true,
+                error_count: 0,
+                errors: Vec::new(),
+            };
+            println!("{}", serde_json::to_string_pretty(&output)?);
+        } else {
+            println!("lint: spec/ directory not found");
+        }
         return Ok(0);
     }
 
@@ -120,13 +136,31 @@ pub(super) fn run_lint() -> Result<i32> {
     }
 
     if lint.errors.is_empty() {
-        println!("lint: ok");
+        if args.format == LintFormat::Json {
+            let output = LintOutput {
+                ok: true,
+                error_count: 0,
+                errors: Vec::new(),
+            };
+            println!("{}", serde_json::to_string_pretty(&output)?);
+        } else {
+            println!("lint: ok");
+        }
         return Ok(0);
     }
 
-    for err in &lint.errors {
-        println!("lint: error: {err}");
+    if args.format == LintFormat::Json {
+        let output = LintOutput {
+            ok: false,
+            error_count: lint.errors.len(),
+            errors: lint.errors,
+        };
+        println!("{}", serde_json::to_string_pretty(&output)?);
+    } else {
+        for err in &lint.errors {
+            println!("lint: error: {err}");
+        }
+        println!("lint summary: {} error(s)", lint.errors.len());
     }
-    println!("lint summary: {} error(s)", lint.errors.len());
     Ok(1)
 }

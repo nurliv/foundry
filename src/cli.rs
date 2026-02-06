@@ -22,7 +22,7 @@ pub(crate) struct SpecCommand {
 #[derive(Subcommand, Debug)]
 pub(crate) enum SpecSubcommand {
     Init(InitArgs),
-    Lint,
+    Lint(LintArgs),
     Link(LinkCommand),
     Impact(ImpactArgs),
     Search(SearchCommand),
@@ -33,6 +33,18 @@ pub(crate) enum SpecSubcommand {
 pub(crate) struct InitArgs {
     #[arg(long)]
     pub(crate) sync: bool,
+}
+
+#[derive(Args, Debug)]
+pub(crate) struct LintArgs {
+    #[arg(long, value_enum, default_value_t = LintFormat::Table)]
+    pub(crate) format: LintFormat,
+}
+
+#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LintFormat {
+    Table,
+    Json,
 }
 
 #[derive(Args, Debug)]

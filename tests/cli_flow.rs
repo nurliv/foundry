@@ -234,8 +234,79 @@ fn lint_detects_term_key_drift() {
 
     let lint = run_foundry(&root, &["spec", "lint"]);
     assert!(!lint.status.success(), "lint should fail on term drift");
+    assert_eq!(lint.status.code(), Some(1));
     let stdout = String::from_utf8_lossy(&lint.stdout);
     assert!(stdout.contains("term key drift detected"), "{stdout}");
+}
+
+#[test]
+fn lint_json_format_reports_success() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(spec_dir.join("a.md"), "# A").expect("write a");
+
+    let init = run_foundry(&root, &["spec", "init", "--sync"]);
+    assert!(init.status.success(), "init failed");
+
+    let mut a_meta: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(spec_dir.join("a.meta.json")).expect("read a"))
+            .expect("parse a");
+    a_meta["type"] = serde_json::Value::String("product_goal".to_string());
+    fs::write(
+        spec_dir.join("a.meta.json"),
+        serde_json::to_string_pretty(&a_meta).expect("serialize a") + "\n",
+    )
+    .expect("write a");
+
+    let lint = run_foundry(&root, &["spec", "lint", "--format", "json"]);
+    assert!(lint.status.success(), "lint should pass");
+    let output: serde_json::Value = serde_json::from_slice(&lint.stdout).expect("parse lint json");
+    assert_eq!(output["ok"], true);
+    assert_eq!(output["error_count"], 0);
+    assert_eq!(output["errors"], serde_json::json!([]));
+}
+
+#[test]
+fn lint_json_format_reports_errors_with_exit_code_one() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(spec_dir.join("a.md"), "# A").expect("write a");
+    fs::write(spec_dir.join("b.md"), "# B").expect("write b");
+
+    let init = run_foundry(&root, &["spec", "init", "--sync"]);
+    assert!(init.status.success(), "init failed");
+
+    let mut a_meta: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(spec_dir.join("a.meta.json")).expect("read a"))
+            .expect("parse a");
+    let mut b_meta: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(spec_dir.join("b.meta.json")).expect("read b"))
+            .expect("parse b");
+    a_meta["type"] = serde_json::Value::String("product_goal".to_string());
+    a_meta["terms"] = serde_json::json!(["User_ID"]);
+    b_meta["terms"] = serde_json::json!(["user-id"]);
+    fs::write(
+        spec_dir.join("a.meta.json"),
+        serde_json::to_string_pretty(&a_meta).expect("serialize a") + "\n",
+    )
+    .expect("write a");
+    fs::write(
+        spec_dir.join("b.meta.json"),
+        serde_json::to_string_pretty(&b_meta).expect("serialize b") + "\n",
+    )
+    .expect("write b");
+
+    let lint = run_foundry(&root, &["spec", "lint", "--format", "json"]);
+    assert_eq!(lint.status.code(), Some(1));
+    let output: serde_json::Value = serde_json::from_slice(&lint.stdout).expect("parse lint json");
+    assert_eq!(output["ok"], false);
+    assert!(output["error_count"].as_u64().unwrap_or(0) >= 1);
+    let errors = output["errors"].as_array().expect("errors should be array");
+    assert!(!errors.is_empty());
 }
 
 #[test]

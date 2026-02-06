@@ -44,6 +44,16 @@ Exit codes:
 - `1`: lint errors found
 - `2`: runtime/system error
 
+Flags:
+
+- `--format table|json` default `table`
+
+Output fields (`--format json`):
+
+- `ok`
+- `error_count`
+- `errors[]`
+
 ## `foundry spec link`
 
 Subcommands:
