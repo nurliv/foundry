@@ -42,10 +42,12 @@ foundry spec write --id SPC-001 --status doing
 
 # 5) Derive design from spec node
 foundry spec derive design --from SPC-001 --path spec/40-auth-design.md --type component_design --status review
+foundry spec derive design --from SPC-001 --format json
 
 # 6) Derive implementation task from design node
 foundry spec derive tasks --from SPC-010 --path spec/60-auth-task.md --type implementation_task --status todo
 foundry spec derive tasks --from SPC-010 --item "API" --item "DB Migration" --item "Tests" --chain
+foundry spec derive tasks --from SPC-010 --item "API" --item "Tests" --chain --format json
 
 # 7) Build search index
 foundry spec search index

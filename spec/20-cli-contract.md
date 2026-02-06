@@ -89,6 +89,7 @@ Examples:
 
 - `foundry spec derive design --from SPC-001 --path spec/40-auth-design.md --type component_design --status review`
 - `foundry spec derive design --from SPC-001 --body-file /tmp/design.md`
+- `foundry spec derive design --from SPC-001 --format json`
 
 Rules (`design`):
 
@@ -103,6 +104,7 @@ Examples (`tasks`):
 - `foundry spec derive tasks --from SPC-010 --path spec/60-auth-task.md --type implementation_task --status todo`
 - `foundry spec derive tasks --from SPC-010 --depends-on SPC-020 --depends-on SPC-021`
 - `foundry spec derive tasks --from SPC-010 --item "API" --item "DB Migration" --item "Tests" --chain`
+- `foundry spec derive tasks --from SPC-010 --item "API" --item "Tests" --format json`
 
 Rules (`tasks`):
 
@@ -114,6 +116,22 @@ Rules (`tasks`):
 - `--item` can be repeated to generate multiple task nodes in one command
 - `--chain` adds auto `depends_on` edges from each generated task to the previous generated task
 - if `--body` and `--body-file` are omitted, a default task skeleton body is generated
+- `--format table|json` default `table`
+
+Output fields (`derive design --format json`):
+
+- `mode` (`design`)
+- `source`
+- `derived` (`id`, `path`)
+- `edges[]` (`from`, `to`, `type`, `status`)
+
+Output fields (`derive tasks --format json`):
+
+- `mode` (`tasks`)
+- `source`
+- `derived[]` (`id`, `path`)
+- `edges[]` (`from`, `to`, `type`, `status`)
+- `chain`
 
 Generated paths (`--agent`):
 

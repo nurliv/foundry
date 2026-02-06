@@ -17,6 +17,6 @@ Drive this phase with graph-traceable decisions and reproducible CLI evidence.
 ## Core Commands
 - foundry spec ask "propose design for <SPC-ID>" --format json
 - foundry spec write --path spec/<NN-design-topic>.md --body-file <design.md> --type component_design --status review
-- foundry spec derive design --from <SPC-ID> --path spec/<NN-design-topic>.md --type component_design --status review
+- foundry spec derive design --from <SPC-ID> --path spec/<NN-design-topic>.md --type component_design --status review --format json
 - foundry spec write --id <DESIGN-ID> --status active
 - foundry spec impact <DESIGN-ID> --format json

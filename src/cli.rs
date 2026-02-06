@@ -65,6 +65,8 @@ pub(crate) struct DeriveDesignArgs {
     pub(crate) rationale: String,
     #[arg(long = "term")]
     pub(crate) terms: Vec<String>,
+    #[arg(long, value_enum, default_value_t = DeriveFormat::Table)]
+    pub(crate) format: DeriveFormat,
 }
 
 #[derive(Args, Debug)]
@@ -93,6 +95,14 @@ pub(crate) struct DeriveTasksArgs {
     pub(crate) depends_on: Vec<String>,
     #[arg(long = "term")]
     pub(crate) terms: Vec<String>,
+    #[arg(long, value_enum, default_value_t = DeriveFormat::Table)]
+    pub(crate) format: DeriveFormat,
+}
+
+#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DeriveFormat {
+    Table,
+    Json,
 }
 
 #[derive(Args, Debug)]

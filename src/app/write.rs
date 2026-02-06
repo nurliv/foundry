@@ -1,6 +1,14 @@
 use super::*;
 
 pub(super) fn run_write(args: &WriteArgs) -> Result<String> {
+    run_write_internal(args, true)
+}
+
+pub(super) fn run_write_silent(args: &WriteArgs) -> Result<String> {
+    run_write_internal(args, false)
+}
+
+fn run_write_internal(args: &WriteArgs, emit_log: bool) -> Result<String> {
     if args.body.is_some() && args.body_file.is_some() {
         anyhow::bail!("--body and --body-file cannot be used together");
     }
@@ -105,13 +113,15 @@ pub(super) fn run_write(args: &WriteArgs) -> Result<String> {
 
     write_meta_json(&meta_path, &meta)?;
     let action = if created { "created" } else { "updated" };
-    println!(
-        "spec write: {} id={} md={} meta={}",
-        action,
-        meta.id,
-        md_path.display(),
-        meta_path.display()
-    );
+    if emit_log {
+        println!(
+            "spec write: {} id={} md={} meta={}",
+            action,
+            meta.id,
+            md_path.display(),
+            meta_path.display()
+        );
+    }
     Ok(meta.id)
 }
 

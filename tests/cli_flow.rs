@@ -270,6 +270,41 @@ fn derive_design_fails_when_source_missing() {
 }
 
 #[test]
+fn derive_design_json_format_returns_machine_readable_output() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(spec_dir.join("10-spec.md"), "# Auth Spec\n\ncontent").expect("write source spec");
+
+    let init = run_foundry(&root, &["spec", "init", "--sync"]);
+    assert!(init.status.success(), "init failed");
+
+    let derive = run_foundry(
+        &root,
+        &[
+            "spec",
+            "derive",
+            "design",
+            "--from",
+            "SPC-001",
+            "--path",
+            "spec/40-auth-design.md",
+            "--format",
+            "json",
+        ],
+    );
+    assert!(derive.status.success(), "derive failed");
+    let output: serde_json::Value =
+        serde_json::from_slice(&derive.stdout).expect("parse derive json");
+    assert_eq!(output["mode"], "design");
+    assert_eq!(output["source"], "SPC-001");
+    assert_eq!(output["derived"]["path"], "spec/40-auth-design.md");
+    let edges = output["edges"].as_array().expect("edges array");
+    assert!(edges.iter().any(|e| e["type"] == "refines" && e["to"] == "SPC-001"));
+}
+
+#[test]
 fn derive_tasks_creates_task_node_with_refines_and_depends_on() {
     let root = tempdir().expect("create temp dir");
     let root = root.path();
@@ -459,6 +494,47 @@ fn derive_tasks_with_chain_adds_dependency_to_previous_generated_task() {
 }
 
 #[test]
+fn derive_tasks_json_format_returns_machine_readable_output() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(spec_dir.join("10-design-a.md"), "# Design A\n\ncontent").expect("write design a");
+
+    let init = run_foundry(&root, &["spec", "init", "--sync"]);
+    assert!(init.status.success(), "init failed");
+
+    let derive = run_foundry(
+        &root,
+        &[
+            "spec",
+            "derive",
+            "tasks",
+            "--from",
+            "SPC-001",
+            "--item",
+            "API",
+            "--item",
+            "Tests",
+            "--chain",
+            "--format",
+            "json",
+        ],
+    );
+    assert!(derive.status.success(), "derive failed");
+    let output: serde_json::Value =
+        serde_json::from_slice(&derive.stdout).expect("parse derive json");
+    assert_eq!(output["mode"], "tasks");
+    assert_eq!(output["source"], "SPC-001");
+    assert_eq!(output["chain"], true);
+    let derived = output["derived"].as_array().expect("derived array");
+    assert_eq!(derived.len(), 2);
+    let edges = output["edges"].as_array().expect("edges array");
+    assert!(edges.iter().any(|e| e["type"] == "refines"));
+    assert!(edges.iter().any(|e| e["type"] == "depends_on"));
+}
+
+#[test]
 fn init_with_agents_generates_command_templates() {
     let root = tempdir().expect("create temp dir");
     let root = root.path();
@@ -525,12 +601,14 @@ fn init_with_agents_generates_command_templates() {
     assert!(codex_implement_text.contains("spec write --id <TASK-ID> --status done"));
     assert!(codex_impl_review_text.contains("spec write --id <TASK-ID> --status blocked"));
     assert!(codex_design_plan_text.contains("spec derive design --from <SPC-ID>"));
+    assert!(codex_design_plan_text.contains("--format json"));
     assert!(!codex_design_plan_text.contains("spec link add --from <DESIGN-ID>"));
     assert!(codex_task_breakdown_text.contains("spec derive tasks --from <DESIGN-ID>"));
     assert!(
         codex_task_breakdown_text.contains("--depends-on <TASK-ID>"),
         "task breakdown should suggest dependency capture at derive stage"
     );
+    assert!(codex_task_breakdown_text.contains("--format json"));
     assert!(!codex_text.contains("{{"), "placeholder should be rendered");
     assert!(!codex_skill_text.contains("{{"), "placeholder should be rendered");
     let project_name = root

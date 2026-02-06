@@ -7,6 +7,38 @@ pub(super) fn run_derive(args: DeriveCommand) -> Result<()> {
     }
 }
 
+#[derive(Debug, Serialize)]
+struct DeriveEdgeOutput {
+    from: String,
+    to: String,
+    #[serde(rename = "type")]
+    edge_type: String,
+    status: String,
+}
+
+#[derive(Debug, Serialize)]
+struct DerivedNodeOutput {
+    id: String,
+    path: String,
+}
+
+#[derive(Debug, Serialize)]
+struct DeriveDesignOutput {
+    mode: &'static str,
+    source: String,
+    derived: DerivedNodeOutput,
+    edges: Vec<DeriveEdgeOutput>,
+}
+
+#[derive(Debug, Serialize)]
+struct DeriveTasksOutput {
+    mode: &'static str,
+    source: String,
+    derived: Vec<DerivedNodeOutput>,
+    edges: Vec<DeriveEdgeOutput>,
+    chain: bool,
+}
+
 fn run_derive_design(args: &DeriveDesignArgs) -> Result<()> {
     let spec_root = Path::new("spec");
     if !spec_root.exists() {
@@ -48,7 +80,7 @@ fn run_derive_design(args: &DeriveDesignArgs) -> Result<()> {
         body_file: None,
         terms: args.terms.clone(),
     };
-    let design_id = super::write::run_write(&write_args)?;
+    let design_id = super::write::run_write_silent(&write_args)?;
     if design_id == args.from {
         anyhow::bail!("derived node id is identical to source id: {}", args.from);
     }
@@ -60,11 +92,23 @@ fn run_derive_design(args: &DeriveDesignArgs) -> Result<()> {
         .get_mut(&design_id)
         .with_context(|| format!("derived node not found after write: {design_id}"))?;
     upsert_refines_edge(design_meta, &args.from, &args.rationale);
+    let design_md_path = design_meta.body_md_path.clone();
     write_meta_json(path, design_meta)?;
-    println!(
-        "spec derive design: source={} derived={} edge=refines",
-        args.from, design_id
-    );
+    let output = DeriveDesignOutput {
+        mode: "design",
+        source: args.from.clone(),
+        derived: DerivedNodeOutput {
+            id: design_id.clone(),
+            path: design_md_path,
+        },
+        edges: vec![DeriveEdgeOutput {
+            from: design_id.clone(),
+            to: args.from.clone(),
+            edge_type: "refines".to_string(),
+            status: "confirmed".to_string(),
+        }],
+    };
+    print_design_output(&output, args.format)?;
     Ok(())
 }
 
@@ -131,6 +175,8 @@ fn run_derive_tasks(args: &DeriveTasksArgs) -> Result<()> {
         }
     }
 
+    let mut edge_outputs = Vec::<DeriveEdgeOutput>::new();
+    let mut derived_outputs = Vec::<DerivedNodeOutput>::new();
     for (idx, task_id) in task_ids.iter().enumerate() {
         if *task_id == args.from {
             anyhow::bail!("derived node id is identical to source id: {}", args.from);
@@ -139,6 +185,12 @@ fn run_derive_tasks(args: &DeriveTasksArgs) -> Result<()> {
             .get_mut(task_id)
             .with_context(|| format!("derived node not found after write: {task_id}"))?;
         upsert_refines_edge(task_meta, &args.from, &args.rationale);
+        edge_outputs.push(DeriveEdgeOutput {
+            from: task_id.clone(),
+            to: args.from.clone(),
+            edge_type: "refines".to_string(),
+            status: "confirmed".to_string(),
+        });
         for dep_id in &args.depends_on {
             upsert_edge(
                 task_meta,
@@ -148,6 +200,12 @@ fn run_derive_tasks(args: &DeriveTasksArgs) -> Result<()> {
                 1.0,
                 "confirmed",
             );
+            edge_outputs.push(DeriveEdgeOutput {
+                from: task_id.clone(),
+                to: dep_id.clone(),
+                edge_type: "depends_on".to_string(),
+                status: "confirmed".to_string(),
+            });
         }
         if args.chain && idx > 0 {
             upsert_edge(
@@ -158,16 +216,27 @@ fn run_derive_tasks(args: &DeriveTasksArgs) -> Result<()> {
                 1.0,
                 "confirmed",
             );
+            edge_outputs.push(DeriveEdgeOutput {
+                from: task_id.clone(),
+                to: task_ids[idx - 1].clone(),
+                edge_type: "depends_on".to_string(),
+                status: "confirmed".to_string(),
+            });
         }
+        derived_outputs.push(DerivedNodeOutput {
+            id: task_id.clone(),
+            path: task_meta.body_md_path.clone(),
+        });
         write_meta_json(path, task_meta)?;
     }
-    println!(
-        "spec derive tasks: source={} derived={} deps={} chain={}",
-        args.from,
-        task_ids.len(),
-        args.depends_on.len(),
-        args.chain
-    );
+    let output = DeriveTasksOutput {
+        mode: "tasks",
+        source: args.from.clone(),
+        derived: derived_outputs,
+        edges: edge_outputs,
+        chain: args.chain,
+    };
+    print_tasks_output(&output, args.format)?;
     Ok(())
 }
 
@@ -182,7 +251,7 @@ fn write_task_node(args: &DeriveTasksArgs, path: String, title: String, body: St
         body_file: None,
         terms: args.terms.clone(),
     };
-    super::write::run_write(&write_args)
+    super::write::run_write_silent(&write_args)
 }
 
 fn upsert_refines_edge(meta: &mut SpecNodeMeta, to: &str, rationale: &str) {
@@ -262,4 +331,29 @@ fn to_meta_map(metas: Vec<(PathBuf, SpecNodeMeta)>) -> HashMap<String, (PathBuf,
         map.insert(meta.id.clone(), (path, meta));
     }
     map
+}
+
+fn print_design_output(output: &DeriveDesignOutput, format: DeriveFormat) -> Result<()> {
+    match format {
+        DeriveFormat::Json => println!("{}", serde_json::to_string_pretty(output)?),
+        DeriveFormat::Table => println!(
+            "spec derive design: source={} derived={} edge=refines",
+            output.source, output.derived.id
+        ),
+    }
+    Ok(())
+}
+
+fn print_tasks_output(output: &DeriveTasksOutput, format: DeriveFormat) -> Result<()> {
+    match format {
+        DeriveFormat::Json => println!("{}", serde_json::to_string_pretty(output)?),
+        DeriveFormat::Table => println!(
+            "spec derive tasks: source={} derived={} edges={} chain={}",
+            output.source,
+            output.derived.len(),
+            output.edges.len(),
+            output.chain
+        ),
+    }
+    Ok(())
 }
