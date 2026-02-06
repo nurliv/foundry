@@ -13,6 +13,7 @@ Foundry keeps human-readable specs in Markdown while tracking machine-usable gra
 ## Features
 
 - `spec init`: generate/sync meta files from Markdown
+- `spec write`: create/update one spec node markdown + meta in one command
 - `spec lint`: consistency checks with table/json output
 - `spec link`: edge CRUD and proposal support
 - `spec impact`: blast-radius and review-order analysis
@@ -33,10 +34,13 @@ foundry spec init --sync
 # 3) Validate graph consistency
 foundry spec lint --format json
 
-# 4) Build search index
+# 4) Write/update one node
+foundry spec write --path spec/10-auth.md --body "# Auth\n\n..." --type feature_requirement --status draft
+
+# 5) Build search index
 foundry spec search index
 
-# 5) Ask and inspect impact
+# 6) Ask and inspect impact
 foundry spec ask "what should I implement first?" --format json --explain
 foundry spec impact SPC-001 --format json
 ```

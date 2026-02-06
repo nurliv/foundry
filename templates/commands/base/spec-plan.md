@@ -17,6 +17,7 @@ Drive this phase for {{project_name}} with graph-traceable decisions and reprodu
 ## Core Commands
 - foundry spec search query "<topic>" --format json --mode hybrid
 - foundry spec ask "<goal and constraints>" --format json --explain
+- foundry spec write --path spec/<NN-topic>.md --body-file <draft.md> --type feature_requirement --status draft
 - foundry spec init --sync
 - foundry spec link propose --node {{main_spec_id}}
 - foundry spec impact {{main_spec_id}} --format json --depth {{default_depth}}

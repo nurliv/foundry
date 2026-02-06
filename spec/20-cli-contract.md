@@ -3,6 +3,7 @@
 ## Command Set
 
 - `foundry spec init`
+- `foundry spec write`
 - `foundry spec lint`
 - `foundry spec link`
 - `foundry spec impact`
@@ -40,6 +41,38 @@ Output:
 
 - summary counts (`created`, `updated`, `skipped`, `error`)
 - agent template summary (`written`, `skipped`, `errors`) when `--agent` is used
+
+## `foundry spec write`
+
+Purpose:
+
+- create or update a single node markdown and matching `.meta.json` in one step
+- enable AI agents to persist phase outputs through Foundry CLI
+
+Usage:
+
+- `foundry spec write --path spec/10-auth.md --body "# Auth\n\n..." --type feature_requirement --status draft`
+- `foundry spec write --path spec/40-design-auth.md --body-file /tmp/design.md --type component_design --status review`
+
+Rules:
+
+- `--path` must be under `spec/` and end with `.md`
+- `--body` and `--body-file` are mutually exclusive
+- when meta exists, unspecified fields are preserved (including existing `edges`)
+- when meta is missing, defaults are used (`type=feature_requirement`, `status=draft`, auto `id`)
+- title is resolved from `--title` or markdown first heading (`# ...`)
+- hash is always updated from markdown content
+
+Flags:
+
+- `--path <spec/*.md>` required
+- `--id <SPC-xxx>` optional explicit id
+- `--type <node_type>` optional
+- `--status <node_status>` optional
+- `--title <text>` optional
+- `--body <markdown>` optional
+- `--body-file <path>` optional
+- `--term <text>` repeatable; if provided, replaces `terms[]`
 
 Generated paths (`--agent`):
 

@@ -19,6 +19,7 @@ mod link;
 mod plan;
 mod runtime;
 mod search;
+mod write;
 use core::*;
 use impact::*;
 use init::*;
@@ -27,6 +28,7 @@ use link::*;
 use plan::*;
 use runtime::*;
 use search::*;
+use write::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct SpecNodeMeta {
@@ -126,6 +128,10 @@ fn run() -> Result<i32> {
                     &args.template_repo,
                     &args.template_ref,
                 )?;
+                Ok(0)
+            }
+            SpecSubcommand::Write(args) => {
+                run_write(&args)?;
                 Ok(0)
             }
             SpecSubcommand::Lint(args) => Ok(run_lint(&args)?),

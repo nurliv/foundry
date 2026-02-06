@@ -22,6 +22,7 @@ pub(crate) struct SpecCommand {
 #[derive(Subcommand, Debug)]
 pub(crate) enum SpecSubcommand {
     Init(InitArgs),
+    Write(WriteArgs),
     Lint(LintArgs),
     Link(LinkCommand),
     Impact(ImpactArgs),
@@ -29,6 +30,26 @@ pub(crate) enum SpecSubcommand {
     Agent(AgentCommand),
     Search(SearchCommand),
     Ask(AskArgs),
+}
+
+#[derive(Args, Debug)]
+pub(crate) struct WriteArgs {
+    #[arg(long)]
+    pub(crate) path: String,
+    #[arg(long)]
+    pub(crate) id: Option<String>,
+    #[arg(long = "type")]
+    pub(crate) node_type: Option<String>,
+    #[arg(long)]
+    pub(crate) status: Option<String>,
+    #[arg(long)]
+    pub(crate) title: Option<String>,
+    #[arg(long)]
+    pub(crate) body: Option<String>,
+    #[arg(long)]
+    pub(crate) body_file: Option<String>,
+    #[arg(long = "term")]
+    pub(crate) terms: Vec<String>,
 }
 
 #[derive(Args, Debug)]

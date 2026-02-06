@@ -15,6 +15,7 @@ Drive this phase with graph-traceable decisions and reproducible CLI evidence.
 - After writing markdown, run `foundry spec init --sync` to sync `.meta.json`
 
 ## Core Commands
+- foundry spec write --path spec/<NN-task-topic>.md --body-file <task.md> --type implementation_task --status todo
 - foundry spec init --sync
 - foundry spec plan ready --format json
 - foundry spec plan batches --format json

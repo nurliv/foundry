@@ -52,6 +52,110 @@ fn init_creates_meta_json_and_lint_passes() {
 }
 
 #[test]
+fn write_creates_markdown_and_meta_with_defaults() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    fs::create_dir_all(root.join("spec")).expect("create spec dir");
+
+    let write = run_foundry(
+        &root,
+        &[
+            "spec",
+            "write",
+            "--path",
+            "spec/10-auth.md",
+            "--body",
+            "# Auth Requirement\n\nusers can sign in",
+            "--type",
+            "feature_requirement",
+            "--status",
+            "draft",
+            "--term",
+            "auth",
+            "--term",
+            "signin",
+        ],
+    );
+    assert!(
+        write.status.success(),
+        "write failed: {}",
+        String::from_utf8_lossy(&write.stderr)
+    );
+
+    let md_path = root.join("spec/10-auth.md");
+    let meta_path = root.join("spec/10-auth.meta.json");
+    assert!(md_path.exists(), "markdown should exist");
+    assert!(meta_path.exists(), "meta should exist");
+
+    let meta: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(meta_path).expect("read meta")).expect("parse");
+    assert_eq!(meta["title"], "Auth Requirement");
+    assert_eq!(meta["type"], "feature_requirement");
+    assert_eq!(meta["status"], "draft");
+    assert_eq!(meta["body_md_path"], "spec/10-auth.md");
+}
+
+#[test]
+fn write_updates_existing_meta_without_losing_edges() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(spec_dir.join("a.md"), "# A").expect("write a");
+    fs::write(spec_dir.join("b.md"), "# B").expect("write b");
+
+    let init = run_foundry(&root, &["spec", "init", "--sync"]);
+    assert!(init.status.success(), "init failed");
+
+    let add = run_foundry(
+        &root,
+        &[
+            "spec",
+            "link",
+            "add",
+            "--from",
+            "SPC-001",
+            "--to",
+            "SPC-002",
+            "--type",
+            "depends_on",
+            "--rationale",
+            "a depends on b",
+        ],
+    );
+    assert!(add.status.success(), "add failed");
+
+    let write = run_foundry(
+        &root,
+        &[
+            "spec",
+            "write",
+            "--path",
+            "spec/a.md",
+            "--body",
+            "# A Updated\n\nnew content",
+            "--status",
+            "active",
+        ],
+    );
+    assert!(
+        write.status.success(),
+        "write failed: {}",
+        String::from_utf8_lossy(&write.stderr)
+    );
+
+    let a_meta: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(spec_dir.join("a.meta.json")).expect("read a"))
+            .expect("parse a");
+    assert_eq!(a_meta["id"], "SPC-001");
+    assert_eq!(a_meta["status"], "active");
+    assert_eq!(a_meta["title"], "A Updated");
+    let edges = a_meta["edges"].as_array().expect("edges should be array");
+    assert_eq!(edges.len(), 1, "existing edge should remain");
+    assert_eq!(edges[0]["to"], "SPC-002");
+}
+
+#[test]
 fn init_with_agents_generates_command_templates() {
     let root = tempdir().expect("create temp dir");
     let root = root.path();
