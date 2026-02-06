@@ -558,9 +558,28 @@ fn ask_returns_citations_and_evidence() {
     );
     let output: serde_json::Value =
         serde_json::from_slice(&ask.stdout).expect("parse ask output");
+    let obj = output.as_object().expect("ask output object");
+    let expected_keys = [
+        "question",
+        "mode",
+        "answer",
+        "confidence",
+        "citations",
+        "evidence",
+        "explanations",
+        "gaps",
+    ];
+    for key in expected_keys {
+        assert!(obj.contains_key(key), "missing key: {key}");
+    }
+    assert_eq!(obj.len(), 8, "unexpected top-level keys: {:?}", obj.keys());
+    assert!(matches!(output["mode"].as_str(), Some("lexical" | "hybrid")));
+    assert!(output["confidence"].as_f64().is_some());
     assert!(output["answer"].is_string());
     assert!(output["citations"].as_array().is_some_and(|a| !a.is_empty()));
     assert!(output["evidence"].as_array().is_some_and(|a| !a.is_empty()));
+    assert!(output["explanations"].as_array().is_some_and(|a| a.is_empty()));
+    assert!(output["gaps"].as_array().is_some());
 }
 
 #[test]
@@ -709,6 +728,9 @@ fn ask_explain_returns_reason_entries() {
         .as_array()
         .expect("explanations should be array");
     assert!(!explanations.is_empty());
+    let first = explanations.first().expect("has explanation");
+    assert!(first["id"].is_string());
+    assert!(first["reason"].is_string());
     let reason_text = explanations
         .iter()
         .filter_map(|v| v["reason"].as_str())

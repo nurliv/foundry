@@ -52,3 +52,13 @@ Done definition:
 Done definition:
 
 - suggestions are reviewable and do not alter confirmed graph semantics.
+
+## Milestone 6: Ask Contract Stabilization (MVP+)
+
+- define a stable JSON contract for `spec ask --format json`
+- publish JSON schema for agent/tool integration
+- add integration tests for required keys and explain-mode behavior
+
+Done definition:
+
+- ask JSON output matches the documented schema structure for required fields.
