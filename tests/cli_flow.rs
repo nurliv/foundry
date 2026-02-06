@@ -815,8 +815,10 @@ fn plan_ready_reports_ready_and_blocked_tasks() {
     let blocked = json["blocked"].as_array().expect("blocked array");
     assert_eq!(ready.len(), 1);
     assert_eq!(ready[0]["id"], "SPC-002");
+    assert_eq!(ready[0]["path"], "spec/t2.md");
     assert_eq!(blocked.len(), 1);
     assert_eq!(blocked[0]["id"], "SPC-003");
+    assert_eq!(blocked[0]["path"], "spec/t3.md");
     assert_eq!(blocked[0]["blocked_by"][0], "SPC-002");
 }
 
@@ -898,8 +900,18 @@ fn plan_batches_groups_parallel_tasks() {
     let b2 = batches[1]["task_ids"].as_array().expect("batch2 ids");
     assert_eq!(b1.len(), 2);
     assert_eq!(b2.len(), 2);
+    let b1_tasks = batches[0]["tasks"].as_array().expect("batch1 tasks");
+    let b2_tasks = batches[1]["tasks"].as_array().expect("batch2 tasks");
+    assert_eq!(b1_tasks.len(), 2);
+    assert_eq!(b2_tasks.len(), 2);
+    assert!(b1_tasks.iter().all(|t| t["path"].is_string()));
+    assert!(b2_tasks.iter().all(|t| t["path"].is_string()));
     assert!(json["blocked_or_cyclic"]
         .as_array()
         .expect("blocked_or_cyclic")
+        .is_empty());
+    assert!(json["blocked_or_cyclic_tasks"]
+        .as_array()
+        .expect("blocked_or_cyclic_tasks")
         .is_empty());
 }

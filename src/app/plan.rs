@@ -1,9 +1,10 @@
 use super::*;
 
 #[derive(Debug, Serialize)]
-struct ReadyTask {
+struct TaskSummary {
     id: String,
     title: String,
+    path: String,
     status: String,
 }
 
@@ -11,13 +12,14 @@ struct ReadyTask {
 struct BlockedTask {
     id: String,
     title: String,
+    path: String,
     status: String,
     blocked_by: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
 struct PlanReadyOutput {
-    ready: Vec<ReadyTask>,
+    ready: Vec<TaskSummary>,
     blocked: Vec<BlockedTask>,
 }
 
@@ -25,12 +27,14 @@ struct PlanReadyOutput {
 struct PlanBatch {
     batch: usize,
     task_ids: Vec<String>,
+    tasks: Vec<TaskSummary>,
 }
 
 #[derive(Debug, Serialize)]
 struct PlanBatchesOutput {
     batches: Vec<PlanBatch>,
     blocked_or_cyclic: Vec<String>,
+    blocked_or_cyclic_tasks: Vec<TaskSummary>,
 }
 
 pub(super) fn run_plan(plan: PlanCommand) -> Result<()> {
@@ -51,15 +55,17 @@ fn run_plan_ready(format: PlanFormat) -> Result<()> {
         }
         let blockers = unresolved_task_dependencies(meta, &by_id);
         if blockers.is_empty() {
-            ready.push(ReadyTask {
+            ready.push(TaskSummary {
                 id: meta.id.clone(),
                 title: meta.title.clone(),
+                path: meta.body_md_path.clone(),
                 status: meta.status.clone(),
             });
         } else {
             blocked.push(BlockedTask {
                 id: meta.id.clone(),
                 title: meta.title.clone(),
+                path: meta.body_md_path.clone(),
                 status: meta.status.clone(),
                 blocked_by: blockers,
             });
@@ -129,7 +135,17 @@ fn run_plan_batches(format: PlanFormat) -> Result<()> {
         }
         batches.push(PlanBatch {
             batch: batch_no,
-            task_ids: current,
+            task_ids: current.clone(),
+            tasks: current
+                .iter()
+                .filter_map(|id| by_id.get(id))
+                .map(|meta| TaskSummary {
+                    id: meta.id.clone(),
+                    title: meta.title.clone(),
+                    path: meta.body_md_path.clone(),
+                    status: meta.status.clone(),
+                })
+                .collect(),
         });
         batch_no += 1;
     }
@@ -140,9 +156,21 @@ fn run_plan_batches(format: PlanFormat) -> Result<()> {
         .collect::<Vec<_>>();
     blocked_or_cyclic.sort();
 
+    let blocked_or_cyclic_tasks = blocked_or_cyclic
+        .iter()
+        .filter_map(|id| by_id.get(id))
+        .map(|meta| TaskSummary {
+            id: meta.id.clone(),
+            title: meta.title.clone(),
+            path: meta.body_md_path.clone(),
+            status: meta.status.clone(),
+        })
+        .collect::<Vec<_>>();
+
     let output = PlanBatchesOutput {
         batches,
         blocked_or_cyclic,
+        blocked_or_cyclic_tasks,
     };
     match format {
         PlanFormat::Json => println!("{}", serde_json::to_string_pretty(&output)?),
@@ -205,7 +233,10 @@ fn print_plan_ready_table(output: &PlanReadyOutput) {
         println!("  (none)");
     } else {
         for task in &output.ready {
-            println!("  - {} [{}] {}", task.id, task.status, task.title);
+            println!(
+                "  - {} [{}] {} ({})",
+                task.id, task.status, task.title, task.path
+            );
         }
     }
     println!("blocked_tasks:");
@@ -214,11 +245,12 @@ fn print_plan_ready_table(output: &PlanReadyOutput) {
     } else {
         for task in &output.blocked {
             println!(
-                "  - {} [{}] blocked_by={} {}",
+                "  - {} [{}] blocked_by={} {} ({})",
                 task.id,
                 task.status,
                 task.blocked_by.join(","),
-                task.title
+                task.title,
+                task.path
             );
         }
     }
@@ -237,8 +269,8 @@ fn print_plan_batches_table(output: &PlanBatchesOutput) {
     if output.blocked_or_cyclic.is_empty() {
         println!("  (none)");
     } else {
-        for id in &output.blocked_or_cyclic {
-            println!("  - {id}");
+        for task in &output.blocked_or_cyclic_tasks {
+            println!("  - {} [{}] {} ({})", task.id, task.status, task.title, task.path);
         }
     }
 }

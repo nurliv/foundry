@@ -134,13 +134,15 @@ Examples:
 
 Output fields (`ready --format json`):
 
-- `ready[]` (`id`, `title`, `status`)
-- `blocked[]` (`id`, `title`, `status`, `blocked_by[]`)
+- `ready[]` (`id`, `title`, `path`, `status`)
+- `blocked[]` (`id`, `title`, `path`, `status`, `blocked_by[]`)
 
 Output fields (`batches --format json`):
 
-- `batches[]` (`batch`, `task_ids[]`)
+- `batches[]` (`batch`, `task_ids[]`, `tasks[]`)
+- `tasks[]` item fields: (`id`, `title`, `path`, `status`)
 - `blocked_or_cyclic[]`
+- `blocked_or_cyclic_tasks[]` (`id`, `title`, `path`, `status`)
 
 ## `foundry spec search`
 
