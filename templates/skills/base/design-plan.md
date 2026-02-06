@@ -10,6 +10,6 @@ Support the design-plan phase with traceable graph operations and JSON-first evi
 - Design markdown template: `templates/node-docs/design.md`
 
 ## Outputs
-- Updated links/status decisions
+- Derived design node updates (`spec derive design` / `spec write --id`)
 - JSON evidence from foundry commands
 - Follow-up actions for the next phase

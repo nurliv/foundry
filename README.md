@@ -126,6 +126,7 @@ Generated outputs:
 - `docs/agents/<agent>/commands/*.md`
 - `docs/agents/<agent>/skills/*.md`
 - implement/impl-review templates include task status transition commands via `spec write --id <TASK-ID> --status ...`
+- design/task planning templates prioritize `spec derive design` / `spec derive tasks` over manual link wiring
 - install mode:
 - codex: `<codex_home>/{commands|skills}/foundry/*.md`
 - claude: `<claude_dir>/{commands|skills}/foundry/*.md`

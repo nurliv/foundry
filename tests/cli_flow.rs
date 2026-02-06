@@ -395,12 +395,16 @@ fn init_with_agents_generates_command_templates() {
     let claude_skill = root.join("docs/agents/claude/skills/spec-plan.md");
     let codex_implement = root.join("docs/agents/codex/commands/implement.md");
     let codex_impl_review = root.join("docs/agents/codex/commands/impl-review.md");
+    let codex_design_plan = root.join("docs/agents/codex/commands/design-plan.md");
+    let codex_task_breakdown = root.join("docs/agents/codex/commands/task-breakdown.md");
     assert!(codex.exists(), "missing codex template");
     assert!(claude.exists(), "missing claude template");
     assert!(codex_skill.exists(), "missing codex skill template");
     assert!(claude_skill.exists(), "missing claude skill template");
     assert!(codex_implement.exists(), "missing codex implement template");
     assert!(codex_impl_review.exists(), "missing codex impl-review template");
+    assert!(codex_design_plan.exists(), "missing codex design-plan template");
+    assert!(codex_task_breakdown.exists(), "missing codex task-breakdown template");
 
     let codex_text = fs::read_to_string(codex).expect("read codex template");
     let claude_text = fs::read_to_string(claude).expect("read claude template");
@@ -411,6 +415,10 @@ fn init_with_agents_generates_command_templates() {
         fs::read_to_string(codex_implement).expect("read codex implement template");
     let codex_impl_review_text =
         fs::read_to_string(codex_impl_review).expect("read codex impl-review template");
+    let codex_design_plan_text =
+        fs::read_to_string(codex_design_plan).expect("read codex design-plan template");
+    let codex_task_breakdown_text =
+        fs::read_to_string(codex_task_breakdown).expect("read codex task-breakdown template");
     assert!(codex_text.contains("# spec-plan"));
     assert!(codex_text.contains("Codex Overlay: spec-plan"));
     assert!(claude_text.contains("Claude Overlay: spec-plan"));
@@ -419,6 +427,13 @@ fn init_with_agents_generates_command_templates() {
     assert!(codex_implement_text.contains("spec write --id <TASK-ID> --status doing"));
     assert!(codex_implement_text.contains("spec write --id <TASK-ID> --status done"));
     assert!(codex_impl_review_text.contains("spec write --id <TASK-ID> --status blocked"));
+    assert!(codex_design_plan_text.contains("spec derive design --from <SPC-ID>"));
+    assert!(!codex_design_plan_text.contains("spec link add --from <DESIGN-ID>"));
+    assert!(codex_task_breakdown_text.contains("spec derive tasks --from <DESIGN-ID>"));
+    assert!(
+        codex_task_breakdown_text.contains("--depends-on <TASK-ID>"),
+        "task breakdown should suggest dependency capture at derive stage"
+    );
     assert!(!codex_text.contains("{{"), "placeholder should be rendered");
     assert!(!codex_skill_text.contains("{{"), "placeholder should be rendered");
     let project_name = root
