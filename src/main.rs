@@ -791,6 +791,7 @@ fn run_search_index(rebuild: bool) -> Result<()> {
 
         tx.execute("DELETE FROM fts_chunks WHERE node_id = ?1", params![meta.id])?;
         tx.execute("DELETE FROM chunks WHERE node_id = ?1", params![meta.id])?;
+        tx.execute("DELETE FROM chunk_vectors WHERE chunk_id LIKE ?1", params![format!("{}:%", meta.id)])?;
         tx.execute(
             "INSERT INTO nodes (id, title, md_path, meta_path, hash, terms_json, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT(id) DO UPDATE SET title=excluded.title, md_path=excluded.md_path, meta_path=excluded.meta_path, hash=excluded.hash, terms_json=excluded.terms_json, updated_at=excluded.updated_at",
@@ -807,6 +808,16 @@ fn run_search_index(rebuild: bool) -> Result<()> {
             tx.execute(
                 "INSERT INTO fts_chunks (chunk_id, node_id, text) VALUES (?1, ?2, ?3)",
                 params![format!("{}:{idx}", meta.id), meta.id, chunk],
+            )?;
+            let embedding = semantic_vector(chunk);
+            tx.execute(
+                "INSERT INTO chunk_vectors (chunk_id, model, dim, embedding) VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    format!("{}:{idx}", meta.id),
+                    "local-hash-ngrams-v1",
+                    embedding.len() as i64,
+                    vector_to_blob(&embedding)
+                ],
             )?;
         }
         summary.indexed += 1;
@@ -945,6 +956,7 @@ fn collect_lexical_candidates(
 }
 
 fn collect_semantic_candidates(conn: &Connection, query: &str) -> Result<Vec<SemanticCandidate>> {
+    let query_vec = semantic_vector(query);
     let mut stmt = conn.prepare(
         "
         SELECT
@@ -952,42 +964,48 @@ fn collect_semantic_candidates(conn: &Connection, query: &str) -> Result<Vec<Sem
             n.title,
             n.md_path,
             n.terms_json,
-            COALESCE(GROUP_CONCAT(c.text, ' '), '')
-        FROM nodes n
-        LEFT JOIN chunks c ON c.node_id = n.id
-        GROUP BY n.id, n.title, n.md_path, n.terms_json
+            SUBSTR(c.text, 1, 220) AS snippet,
+            cv.embedding
+        FROM chunk_vectors cv
+        JOIN chunks c ON c.chunk_id = cv.chunk_id
+        JOIN nodes n ON n.id = c.node_id
+        WHERE cv.model = 'local-hash-ngrams-v1'
         ",
     )?;
-    let rows = stmt.query_map([], |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, String>(1)?,
-            row.get::<_, String>(2)?,
-            row.get::<_, String>(3)?,
-            row.get::<_, String>(4)?,
-        ))
-    })?;
-
-    let query_vec = semantic_vector(query);
-    let mut out = Vec::new();
-    for row in rows {
-        let (id, title, path, terms_json, chunk_text) = row?;
-        let terms: Vec<String> = serde_json::from_str(&terms_json).unwrap_or_default();
-        let semantic_text = format!("{title}\n{}\n{chunk_text}", terms.join(" "));
-        let score = cosine_similarity(&query_vec, &semantic_vector(&semantic_text));
+    let mut rows = stmt.query([])?;
+    let mut by_node = HashMap::<String, SemanticCandidate>::new();
+    while let Some(row) = rows.next()? {
+        let id: String = row.get(0)?;
+        let title: String = row.get(1)?;
+        let path: String = row.get(2)?;
+        let terms_json: String = row.get(3)?;
+        let snippet: String = row.get(4)?;
+        let embedding_blob: Vec<u8> = row.get(5)?;
+        let chunk_vec = blob_to_vector(&embedding_blob)?;
+        if chunk_vec.is_empty() {
+            continue;
+        }
+        let score = cosine_similarity(&query_vec, &chunk_vec);
         if score < 0.2 {
             continue;
         }
-        let snippet = chunk_text.chars().take(220).collect::<String>().replace('\n', " ");
-        out.push(SemanticCandidate {
-            id,
+        let terms: Vec<String> = serde_json::from_str(&terms_json).unwrap_or_default();
+        let candidate = SemanticCandidate {
+            id: id.clone(),
             title,
             path,
             terms,
-            snippet,
+            snippet: snippet.replace('\n', " "),
             semantic_score: score,
-        });
+        };
+        match by_node.get(&id) {
+            Some(existing) if existing.semantic_score >= candidate.semantic_score => {}
+            _ => {
+                by_node.insert(id, candidate);
+            }
+        }
     }
+    let mut out = by_node.into_values().collect::<Vec<_>>();
     out.sort_by(|a, b| {
         b.semantic_score
             .total_cmp(&a.semantic_score)
@@ -1168,6 +1186,12 @@ fn ensure_search_schema_readonly(conn: &Connection) -> Result<()> {
             node_id UNINDEXED,
             text,
             tokenize = 'unicode61'
+        );
+        CREATE TABLE IF NOT EXISTS chunk_vectors (
+            chunk_id TEXT PRIMARY KEY,
+            model TEXT NOT NULL,
+            dim INTEGER NOT NULL,
+            embedding BLOB
         );
         ",
     )?;
@@ -1389,6 +1413,27 @@ fn semantic_vector(text: &str) -> Vec<f64> {
         }
     }
     vec
+}
+
+fn vector_to_blob(vec: &[f64]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(vec.len() * std::mem::size_of::<f64>());
+    for value in vec {
+        out.extend_from_slice(&value.to_le_bytes());
+    }
+    out
+}
+
+fn blob_to_vector(blob: &[u8]) -> Result<Vec<f64>> {
+    if !blob.len().is_multiple_of(std::mem::size_of::<f64>()) {
+        anyhow::bail!("invalid embedding blob length: {}", blob.len());
+    }
+    let mut out = Vec::with_capacity(blob.len() / std::mem::size_of::<f64>());
+    for chunk in blob.chunks_exact(std::mem::size_of::<f64>()) {
+        let mut buf = [0_u8; std::mem::size_of::<f64>()];
+        buf.copy_from_slice(chunk);
+        out.push(f64::from_le_bytes(buf));
+    }
+    Ok(out)
 }
 
 fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
@@ -2094,5 +2139,16 @@ mod tests {
         let boost = ranking_boost("checkout flow", "Checkout Flow", &[]);
         let low = ranking_boost("checkout flow", "Payment module", &[]);
         assert!(boost > low);
+    }
+
+    #[test]
+    fn vector_blob_roundtrip() {
+        let vec = vec![0.1, -0.5, 1.25, 3.0];
+        let blob = vector_to_blob(&vec);
+        let decoded = blob_to_vector(&blob).expect("decode vector");
+        assert_eq!(vec.len(), decoded.len());
+        for (a, b) in vec.iter().zip(decoded.iter()) {
+            assert!((a - b).abs() < 1e-12);
+        }
     }
 }

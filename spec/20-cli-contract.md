@@ -117,3 +117,4 @@ Flags:
 - `query --format table|json` default `table`
 - `query --mode lexical|hybrid` default `lexical`
 - `hybrid` combines lexical ranking and semantic similarity (RRF merge)
+- semantic similarity in `hybrid` is computed from pre-indexed chunk vectors (`spec search index`)
