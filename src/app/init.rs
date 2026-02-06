@@ -12,9 +12,10 @@ pub(super) fn run_init(
     template_ref: &str,
 ) -> Result<()> {
     let spec_root = Path::new("spec");
+    let tasks_root = Path::new("tasks");
     let mut summary = InitSummary::default();
 
-    if spec_root.exists() {
+    if spec_root.exists() || tasks_root.exists() {
         let md_files = find_markdown_files(spec_root)?;
         let mut used_ids = load_existing_ids(spec_root)?;
         let mut next_id = next_available_id(&used_ids);
@@ -117,7 +118,7 @@ pub(super) fn run_init(
             summary.created, summary.updated, summary.skipped, summary.errors
         );
     } else {
-        println!("spec/ directory not found. skipping spec metadata initialization.");
+        println!("spec/ and tasks/ directories not found. skipping metadata initialization.");
     }
 
     if !agents.is_empty() {

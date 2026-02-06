@@ -18,3 +18,7 @@ This file stores incremental engineering rules and decisions for this repository
 ## Agent Template Rule
 
 - Agent-oriented generated files should support writing directly to each agent's auto-read directory layout, not only repository docs output.
+
+## Node Layout Rule
+
+- Task node markdown/meta should default to `tasks/<source-node-id>/...` rather than `spec/...` for better operational visibility.

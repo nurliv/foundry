@@ -9,7 +9,7 @@ struct LintOutput {
 
 pub(super) fn run_lint(args: &LintArgs) -> Result<i32> {
     let spec_root = Path::new("spec");
-    if !spec_root.exists() {
+    if !spec_root.exists() && !Path::new("tasks").exists() {
         if args.format == LintFormat::Json {
             let output = LintOutput {
                 ok: true,
@@ -18,7 +18,7 @@ pub(super) fn run_lint(args: &LintArgs) -> Result<i32> {
             };
             println!("{}", serde_json::to_string_pretty(&output)?);
         } else {
-            println!("lint: spec/ directory not found");
+            println!("lint: spec/ and tasks/ directories not found");
         }
         return Ok(0);
     }

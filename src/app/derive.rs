@@ -297,7 +297,7 @@ fn default_design_body(source: &SpecNodeMeta, title: &str) -> String {
 }
 
 fn default_task_path(from_id: &str) -> String {
-    format!("spec/task-{}.md", from_id.to_ascii_lowercase())
+    format!("tasks/{}/task.md", from_id.to_ascii_lowercase())
 }
 
 fn default_task_item_path(from_id: &str, index: usize, title: &str) -> String {
@@ -311,7 +311,7 @@ fn default_task_item_path(from_id: &str, index: usize, title: &str) -> String {
         .join("-");
     let slug = if slug.is_empty() { "task".to_string() } else { slug };
     format!(
-        "spec/task-{}-{:02}-{}.md",
+        "tasks/{}/{:02}-{}.md",
         from_id.to_ascii_lowercase(),
         index,
         slug

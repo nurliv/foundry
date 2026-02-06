@@ -6,8 +6,8 @@ Foundry keeps human-readable specs in Markdown while tracking machine-usable gra
 
 ## Core Idea
 
-- Human source of truth: `spec/**/*.md`
-- Tool-managed graph/state: `spec/**/*.meta.json`
+- Human source of truth: `spec/**/*.md` and `tasks/**/*.md`
+- Tool-managed graph/state: `spec/**/*.meta.json` and `tasks/**/*.meta.json`
 - AI suggests, humans confirm
 
 ## Features
@@ -45,7 +45,7 @@ foundry spec derive design --from SPC-001 --path spec/40-auth-design.md --type c
 foundry spec derive design --from SPC-001 --format json
 
 # 6) Derive implementation task from design node
-foundry spec derive tasks --from SPC-010 --path spec/60-auth-task.md --type implementation_task --status todo
+foundry spec derive tasks --from SPC-010 --path tasks/spc-010/60-auth-task.md --type implementation_task --status todo
 foundry spec derive tasks --from SPC-010 --item "API" --item "DB Migration" --item "Tests" --chain
 foundry spec derive tasks --from SPC-010 --item "API" --item "Tests" --chain --format json
 

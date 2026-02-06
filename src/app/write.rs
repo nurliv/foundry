@@ -126,13 +126,12 @@ fn run_write_internal(args: &WriteArgs, emit_log: bool) -> Result<String> {
 }
 
 fn validate_markdown_path(md_path: &Path) -> Result<()> {
-    if md_path
+    let root = md_path
         .components()
         .next()
-        .and_then(|c| c.as_os_str().to_str())
-        != Some("spec")
-    {
-        anyhow::bail!("--path must be under spec/: {}", md_path.display());
+        .and_then(|c| c.as_os_str().to_str());
+    if root != Some("spec") && root != Some("tasks") {
+        anyhow::bail!("--path must be under spec/ or tasks/: {}", md_path.display());
     }
     if md_path.extension().and_then(|e| e.to_str()) != Some("md") {
         anyhow::bail!("--path must end with .md: {}", md_path.display());
@@ -154,8 +153,8 @@ fn resolve_markdown_path(args: &WriteArgs) -> Result<PathBuf> {
     let id = args.id.as_deref().expect("checked by caller");
     validate_node_id(id)?;
     let spec_root = Path::new("spec");
-    if !spec_root.exists() {
-        anyhow::bail!("spec/ directory not found");
+    if !spec_root.exists() && !Path::new("tasks").exists() {
+        anyhow::bail!("spec/ and tasks/ directories not found");
     }
     let mut lint = LintState::default();
     let metas = load_all_meta(spec_root, &mut lint)?;

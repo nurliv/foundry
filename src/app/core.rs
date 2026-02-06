@@ -3,19 +3,24 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(super) fn load_existing_ids(spec_root: &Path) -> Result<HashSet<String>> {
     let mut ids = HashSet::new();
-    for entry in WalkDir::new(spec_root)
-        .into_iter()
-        .filter_map(std::result::Result::ok)
-    {
-        let path = entry.path();
-        if !is_meta_json(path) {
+    for root in doc_roots(spec_root) {
+        if !root.exists() {
             continue;
         }
-        let raw = fs::read_to_string(path)
-            .with_context(|| format!("failed to read meta file: {}", path.display()))?;
-        let meta: SpecNodeMeta = serde_json::from_str(&raw)
-            .with_context(|| format!("invalid meta file: {}", path.display()))?;
-        ids.insert(meta.id);
+        for entry in WalkDir::new(&root)
+            .into_iter()
+            .filter_map(std::result::Result::ok)
+        {
+            let path = entry.path();
+            if !is_meta_json(path) {
+                continue;
+            }
+            let raw = fs::read_to_string(path)
+                .with_context(|| format!("failed to read meta file: {}", path.display()))?;
+            let meta: SpecNodeMeta = serde_json::from_str(&raw)
+                .with_context(|| format!("invalid meta file: {}", path.display()))?;
+            ids.insert(meta.id);
+        }
     }
     Ok(ids)
 }
@@ -25,27 +30,32 @@ pub(super) fn load_all_meta(
     lint: &mut LintState,
 ) -> Result<Vec<(PathBuf, SpecNodeMeta)>> {
     let mut metas = Vec::new();
-    for entry in WalkDir::new(spec_root)
-        .into_iter()
-        .filter_map(std::result::Result::ok)
-    {
-        let path = entry.path();
-        if !is_meta_json(path) {
+    for root in doc_roots(spec_root) {
+        if !root.exists() {
             continue;
         }
-        let raw = match fs::read_to_string(path) {
-            Ok(v) => v,
-            Err(err) => {
-                lint.errors
-                    .push(format!("cannot read {}: {err}", path.display()));
+        for entry in WalkDir::new(&root)
+            .into_iter()
+            .filter_map(std::result::Result::ok)
+        {
+            let path = entry.path();
+            if !is_meta_json(path) {
                 continue;
             }
-        };
-        match serde_json::from_str::<SpecNodeMeta>(&raw) {
-            Ok(meta) => metas.push((path.to_path_buf(), meta)),
-            Err(err) => lint
-                .errors
-                .push(format!("invalid json {}: {err}", path.display())),
+            let raw = match fs::read_to_string(path) {
+                Ok(v) => v,
+                Err(err) => {
+                    lint.errors
+                        .push(format!("cannot read {}: {err}", path.display()));
+                    continue;
+                }
+            };
+            match serde_json::from_str::<SpecNodeMeta>(&raw) {
+                Ok(meta) => metas.push((path.to_path_buf(), meta)),
+                Err(err) => lint
+                    .errors
+                    .push(format!("invalid json {}: {err}", path.display())),
+            }
         }
     }
     Ok(metas)
@@ -53,20 +63,25 @@ pub(super) fn load_all_meta(
 
 pub(super) fn find_markdown_files(spec_root: &Path) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
-    for entry in WalkDir::new(spec_root)
-        .into_iter()
-        .filter_map(std::result::Result::ok)
-    {
-        if entry.file_type().is_file() {
-            let path = entry.path();
-            if path.extension().is_some_and(|ext| ext == "md")
-                && !path
-                    .file_name()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("")
-                    .ends_with(".meta.md")
-            {
-                files.push(path.to_path_buf());
+    for root in doc_roots(spec_root) {
+        if !root.exists() {
+            continue;
+        }
+        for entry in WalkDir::new(&root)
+            .into_iter()
+            .filter_map(std::result::Result::ok)
+        {
+            if entry.file_type().is_file() {
+                let path = entry.path();
+                if path.extension().is_some_and(|ext| ext == "md")
+                    && !path
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("")
+                        .ends_with(".meta.md")
+                {
+                    files.push(path.to_path_buf());
+                }
             }
         }
     }
@@ -92,7 +107,7 @@ pub(super) fn validate_meta_semantics(path: &Path, meta: &SpecNodeMeta, lint: &m
             path.display(),
             meta.id
         ));
-    } else if !(meta.body_md_path.starts_with("spec/") && meta.body_md_path.ends_with(".md")) {
+    } else if !is_valid_doc_body_path(&meta.body_md_path) {
         lint.errors.push(format!(
             "invalid body_md_path format in {} (id={}): {}",
             path.display(),
@@ -230,4 +245,18 @@ pub(super) fn unix_ts() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
+}
+
+fn doc_roots(spec_root: &Path) -> Vec<PathBuf> {
+    let spec = normalize_path(spec_root);
+    let parent = spec
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_default();
+    let tasks = normalize_path(&parent.join("tasks"));
+    vec![spec, tasks]
+}
+
+fn is_valid_doc_body_path(path: &str) -> bool {
+    path.ends_with(".md") && (path.starts_with("spec/") || path.starts_with("tasks/"))
 }

@@ -52,6 +52,31 @@ fn init_creates_meta_json_and_lint_passes() {
 }
 
 #[test]
+fn init_scans_tasks_directory_and_generates_meta() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    let tasks_dir = root.join("tasks/spc-001");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::create_dir_all(&tasks_dir).expect("create tasks dir");
+
+    fs::write(spec_dir.join("01-example.md"), "# Example\n\ncontent").expect("write markdown");
+    fs::write(tasks_dir.join("01-task.md"), "# Task\n\ncontent").expect("write task markdown");
+
+    let init = run_foundry(&root, &["spec", "init", "--sync"]);
+    assert!(
+        init.status.success(),
+        "init failed: {}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+
+    let task_meta = root.join("tasks/spc-001/01-task.meta.json");
+    assert!(task_meta.exists(), "task meta file should be generated");
+    let task_meta_raw = fs::read_to_string(task_meta).expect("read task meta");
+    assert!(task_meta_raw.contains("\"body_md_path\": \"tasks/spc-001/01-task.md\""));
+}
+
+#[test]
 fn write_creates_markdown_and_meta_with_defaults() {
     let root = tempdir().expect("create temp dir");
     let root = root.path();
@@ -373,7 +398,9 @@ fn derive_tasks_fails_for_unknown_depends_on_target() {
     let root = tempdir().expect("create temp dir");
     let root = root.path();
     let spec_dir = root.join("spec");
+    let tasks_dir = root.join("tasks");
     fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::create_dir_all(&tasks_dir).expect("create tasks dir");
     fs::write(spec_dir.join("10-design-a.md"), "# Design A\n\ncontent").expect("write design a");
 
     let init = run_foundry(&root, &["spec", "init", "--sync"]);
@@ -401,7 +428,9 @@ fn derive_tasks_with_items_creates_multiple_task_nodes() {
     let root = tempdir().expect("create temp dir");
     let root = root.path();
     let spec_dir = root.join("spec");
+    let tasks_dir = root.join("tasks");
     fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::create_dir_all(&tasks_dir).expect("create tasks dir");
     fs::write(spec_dir.join("10-design-a.md"), "# Design A\n\ncontent").expect("write design a");
 
     let init = run_foundry(&root, &["spec", "init", "--sync"]);
@@ -434,12 +463,12 @@ fn derive_tasks_with_items_creates_multiple_task_nodes() {
     );
 
     let generated = [
-        "task-spc-001-01-api-implementation.meta.json",
-        "task-spc-001-02-database-migration.meta.json",
-        "task-spc-001-03-integration-tests.meta.json",
+        "spc-001/01-api-implementation.meta.json",
+        "spc-001/02-database-migration.meta.json",
+        "spc-001/03-integration-tests.meta.json",
     ];
     for file in generated {
-        let meta_path = spec_dir.join(file);
+        let meta_path = tasks_dir.join(file);
         assert!(meta_path.exists(), "missing generated meta: {file}");
         let meta: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(meta_path).expect("read meta")).expect("parse meta");
@@ -454,7 +483,9 @@ fn derive_tasks_with_chain_adds_dependency_to_previous_generated_task() {
     let root = tempdir().expect("create temp dir");
     let root = root.path();
     let spec_dir = root.join("spec");
+    let tasks_dir = root.join("tasks");
     fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::create_dir_all(&tasks_dir).expect("create tasks dir");
     fs::write(spec_dir.join("10-design-a.md"), "# Design A\n\ncontent").expect("write design a");
 
     let init = run_foundry(&root, &["spec", "init", "--sync"]);
@@ -479,12 +510,12 @@ fn derive_tasks_with_chain_adds_dependency_to_previous_generated_task() {
 
     let first_meta: serde_json::Value =
         serde_json::from_str(
-            &fs::read_to_string(spec_dir.join("task-spc-001-01-first.meta.json")).expect("read first"),
+            &fs::read_to_string(tasks_dir.join("spc-001/01-first.meta.json")).expect("read first"),
         )
         .expect("parse first");
     let second_meta: serde_json::Value =
         serde_json::from_str(
-            &fs::read_to_string(spec_dir.join("task-spc-001-02-second.meta.json")).expect("read second"),
+            &fs::read_to_string(tasks_dir.join("spc-001/02-second.meta.json")).expect("read second"),
         )
         .expect("parse second");
 

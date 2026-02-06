@@ -18,6 +18,7 @@
 Purpose:
 
 - Scan `spec/**/*.md`
+- Scan `tasks/**/*.md`
 - Create missing `.meta.json`
 - Refresh `hash` for existing meta files
 
@@ -59,7 +60,7 @@ Usage:
 Rules:
 
 - either `--path` or `--id` is required
-- if `--path` is provided, it must be under `spec/` and end with `.md`
+- if `--path` is provided, it must be under `spec/` or `tasks/` and end with `.md`
 - if only `--id` is provided, markdown path is resolved from existing meta
 - `--body` and `--body-file` are mutually exclusive
 - when meta exists, unspecified fields are preserved (including existing `edges`)
@@ -69,7 +70,7 @@ Rules:
 
 Flags:
 
-- `--path <spec/*.md>` optional (required for create flow)
+- `--path <spec/*.md|tasks/*.md>` optional (required for create flow)
 - `--id <SPC-xxx>` optional explicit id
 - `--type <node_type>` optional
 - `--status <node_status>` optional
@@ -101,7 +102,7 @@ Rules (`design`):
 
 Examples (`tasks`):
 
-- `foundry spec derive tasks --from SPC-010 --path spec/60-auth-task.md --type implementation_task --status todo`
+- `foundry spec derive tasks --from SPC-010 --path tasks/spc-010/60-auth-task.md --type implementation_task --status todo`
 - `foundry spec derive tasks --from SPC-010 --depends-on SPC-020 --depends-on SPC-021`
 - `foundry spec derive tasks --from SPC-010 --item "API" --item "DB Migration" --item "Tests" --chain`
 - `foundry spec derive tasks --from SPC-010 --item "API" --item "Tests" --format json`
@@ -110,7 +111,7 @@ Rules (`tasks`):
 
 - `--from` source node id is required and must exist
 - derived node is written through `spec write`
-- when `--path` is omitted, default path is `spec/task-<from-id-lower>.md`
+- when `--path` is omitted, default path is `tasks/<from-id-lower>/task.md`
 - generated/updated task node gets a confirmed `refines` edge to source node
 - `--depends-on` adds confirmed `depends_on` edges from derived task to given node ids
 - `--item` can be repeated to generate multiple task nodes in one command
@@ -314,6 +315,7 @@ Output fields (`batches --format json`):
 Subcommands:
 
 - `index`: build or update search index from `spec/**/*.md` and `spec/**/*.meta.json`
+- `index`: build or update search index from `spec/**/*.md`, `tasks/**/*.md`, and matching `*.meta.json`
 - `query`: run lexical or hybrid search
 - `doctor`: verify index consistency against current node hashes
 
