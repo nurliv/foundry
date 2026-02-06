@@ -35,6 +35,8 @@ Generated paths (`--agent`):
 
 - `docs/agents/<agent>/commands/*.md` from
   `templates/commands/base/*.md` + `templates/commands/overlays/<agent>/*.md`
+- `docs/agents/<agent>/skills/*.md` from
+  `templates/skills/base/*.md` + `templates/skills/overlays/<agent>/*.md`
 
 ## `foundry spec agent`
 
@@ -50,9 +52,10 @@ Examples:
 Rules:
 
 - default agents: `codex`, `claude` when `--agent` is omitted
-- compares generated files under `docs/agents/<agent>/commands/*.md`
-  with rendered content from `templates/commands/base/*.md` and
-  `templates/commands/overlays/<agent>/*.md`
+- compares generated files under:
+- `docs/agents/<agent>/commands/*.md`
+- `docs/agents/<agent>/skills/*.md`
+- with rendered content from matching `templates/{commands|skills}/...` files
 
 Exit codes:
 
@@ -63,7 +66,7 @@ Output fields (`doctor --format json`):
 
 - `ok`
 - `checked`
-- `issues[]` (`agent`, `phase`, `kind`, `detail`)
+- `issues[]` (`agent`, `artifact`, `phase`, `kind`, `detail`)
 
 ## `foundry spec lint`
 

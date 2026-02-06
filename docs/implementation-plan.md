@@ -76,11 +76,11 @@ Done definition:
 ## Milestone 8: Agent Template Bootstrap (MVP+)
 
 - add `spec init --agent <codex|claude>` command-template generation
-- compose templates from `templates/commands/base` + agent overlays
+- compose templates from `templates/{commands|skills}/base` + agent overlays
 - support safe regeneration with `--agent-sync`
 - add `spec agent doctor` for generated template drift detection
 
 Done definition:
 
-- init can generate agent command templates into `docs/agents/<agent>/commands`.
-- agent doctor can detect missing/stale generated templates.
+- init can generate agent command/skill templates into `docs/agents/<agent>/{commands|skills}`.
+- agent doctor can detect missing/stale generated templates for both artifacts.

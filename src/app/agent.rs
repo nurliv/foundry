@@ -1,6 +1,6 @@
 use super::*;
 
-const COMMAND_PHASES: &[&str] = &[
+const TEMPLATE_PHASES: &[&str] = &[
     "spec-plan",
     "spec-review",
     "design-plan",
@@ -8,6 +8,26 @@ const COMMAND_PHASES: &[&str] = &[
     "task-breakdown",
     "implement",
     "impl-review",
+];
+
+#[derive(Clone, Copy)]
+struct TemplateArtifact {
+    label: &'static str,
+    template_subdir: &'static str,
+    output_subdir: &'static str,
+}
+
+const TEMPLATE_ARTIFACTS: &[TemplateArtifact] = &[
+    TemplateArtifact {
+        label: "commands",
+        template_subdir: "commands",
+        output_subdir: "commands",
+    },
+    TemplateArtifact {
+        label: "skills",
+        template_subdir: "skills",
+        output_subdir: "skills",
+    },
 ];
 
 #[derive(Default)]
@@ -20,6 +40,7 @@ pub(super) struct AgentTemplateSummary {
 #[derive(Debug, Serialize)]
 struct AgentDoctorIssue {
     agent: String,
+    artifact: String,
     phase: String,
     kind: String,
     detail: String,
@@ -40,55 +61,60 @@ pub(super) fn run_agent(agent: AgentCommand) -> Result<i32> {
 
 pub(super) fn generate_agent_templates(agents: &[AgentTarget], sync: bool) -> AgentTemplateSummary {
     let mut summary = AgentTemplateSummary::default();
-    let template_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("templates/commands");
     let mut uniq = HashSet::new();
     for agent in agents {
         if !uniq.insert(*agent) {
             continue;
         }
         let slug = agent_slug(*agent);
-        for phase in COMMAND_PHASES {
-            let base_path = template_root.join(format!("base/{phase}.md"));
-            let overlay_path = template_root.join(format!("overlays/{slug}/{phase}.md"));
-            let out_path = PathBuf::from(format!("docs/agents/{slug}/commands/{phase}.md"));
-            if out_path.exists() && !sync {
-                summary.skipped += 1;
-                continue;
-            }
-            let base = match fs::read_to_string(&base_path) {
-                Ok(v) => v,
-                Err(err) => {
-                    summary.errors += 1;
-                    eprintln!("agent template error reading {}: {err}", base_path.display());
+        for artifact in TEMPLATE_ARTIFACTS {
+            let template_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("templates")
+                .join(artifact.template_subdir);
+            for phase in TEMPLATE_PHASES {
+                let base_path = template_root.join(format!("base/{phase}.md"));
+                let overlay_path = template_root.join(format!("overlays/{slug}/{phase}.md"));
+                let out_path =
+                    PathBuf::from(format!("docs/agents/{slug}/{}/{phase}.md", artifact.output_subdir));
+                if out_path.exists() && !sync {
+                    summary.skipped += 1;
                     continue;
                 }
-            };
-            let overlay = match fs::read_to_string(&overlay_path) {
-                Ok(v) => v,
-                Err(err) => {
-                    summary.errors += 1;
-                    eprintln!(
-                        "agent template error reading {}: {err}",
-                        overlay_path.display()
-                    );
-                    continue;
-                }
-            };
+                let base = match fs::read_to_string(&base_path) {
+                    Ok(v) => v,
+                    Err(err) => {
+                        summary.errors += 1;
+                        eprintln!("agent template error reading {}: {err}", base_path.display());
+                        continue;
+                    }
+                };
+                let overlay = match fs::read_to_string(&overlay_path) {
+                    Ok(v) => v,
+                    Err(err) => {
+                        summary.errors += 1;
+                        eprintln!(
+                            "agent template error reading {}: {err}",
+                            overlay_path.display()
+                        );
+                        continue;
+                    }
+                };
 
-            let rendered = render_command_template(&base, &overlay);
-            if let Some(parent) = out_path.parent()
-                && let Err(err) = fs::create_dir_all(parent)
-            {
-                summary.errors += 1;
-                eprintln!("agent template error creating {}: {err}", parent.display());
-                continue;
+                let rendered = render_template(&base, &overlay);
+                if let Some(parent) = out_path.parent()
+                    && let Err(err) = fs::create_dir_all(parent)
+                {
+                    summary.errors += 1;
+                    eprintln!("agent template error creating {}: {err}", parent.display());
+                    continue;
+                }
+                if let Err(err) = fs::write(&out_path, rendered) {
+                    summary.errors += 1;
+                    eprintln!("agent template error writing {}: {err}", out_path.display());
+                    continue;
+                }
+                summary.written += 1;
             }
-            if let Err(err) = fs::write(&out_path, rendered) {
-                summary.errors += 1;
-                eprintln!("agent template error writing {}: {err}", out_path.display());
-                continue;
-            }
-            summary.written += 1;
         }
     }
     summary
@@ -106,65 +132,79 @@ fn run_agent_doctor(args: &AgentDoctorArgs) -> Result<i32> {
         .filter(|a| uniq.insert(*a))
         .collect::<Vec<_>>();
 
-    let template_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("templates/commands");
     let mut issues = Vec::<AgentDoctorIssue>::new();
     let mut checked = 0usize;
 
     for agent in agents {
         let slug = agent_slug(agent).to_string();
-        for phase in COMMAND_PHASES {
-            checked += 1;
-            let base_path = template_root.join(format!("base/{phase}.md"));
-            let overlay_path = template_root.join(format!("overlays/{slug}/{phase}.md"));
-            let out_path = PathBuf::from(format!("docs/agents/{slug}/commands/{phase}.md"));
+        for artifact in TEMPLATE_ARTIFACTS {
+            let template_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("templates")
+                .join(artifact.template_subdir);
+            for phase in TEMPLATE_PHASES {
+                checked += 1;
+                let base_path = template_root.join(format!("base/{phase}.md"));
+                let overlay_path = template_root.join(format!("overlays/{slug}/{phase}.md"));
+                let out_path = PathBuf::from(format!(
+                    "docs/agents/{slug}/{}/{phase}.md",
+                    artifact.output_subdir
+                ));
 
-            let base = match fs::read_to_string(&base_path) {
-                Ok(v) => v,
-                Err(err) => {
+                let base = match fs::read_to_string(&base_path) {
+                    Ok(v) => v,
+                    Err(err) => {
+                        issues.push(AgentDoctorIssue {
+                            agent: slug.clone(),
+                            artifact: artifact.label.to_string(),
+                            phase: phase.to_string(),
+                            kind: "template_missing".to_string(),
+                            detail: format!("missing base template {}: {err}", base_path.display()),
+                        });
+                        continue;
+                    }
+                };
+                let overlay = match fs::read_to_string(&overlay_path) {
+                    Ok(v) => v,
+                    Err(err) => {
+                        issues.push(AgentDoctorIssue {
+                            agent: slug.clone(),
+                            artifact: artifact.label.to_string(),
+                            phase: phase.to_string(),
+                            kind: "template_missing".to_string(),
+                            detail: format!(
+                                "missing overlay template {}: {err}",
+                                overlay_path.display()
+                            ),
+                        });
+                        continue;
+                    }
+                };
+                let expected = render_template(&base, &overlay);
+                let actual = match fs::read_to_string(&out_path) {
+                    Ok(v) => v,
+                    Err(err) => {
+                        issues.push(AgentDoctorIssue {
+                            agent: slug.clone(),
+                            artifact: artifact.label.to_string(),
+                            phase: phase.to_string(),
+                            kind: "generated_missing".to_string(),
+                            detail: format!("missing generated file {}: {err}", out_path.display()),
+                        });
+                        continue;
+                    }
+                };
+                if actual != expected {
                     issues.push(AgentDoctorIssue {
                         agent: slug.clone(),
+                        artifact: artifact.label.to_string(),
                         phase: phase.to_string(),
-                        kind: "template_missing".to_string(),
-                        detail: format!("missing base template {}: {err}", base_path.display()),
-                    });
-                    continue;
-                }
-            };
-            let overlay = match fs::read_to_string(&overlay_path) {
-                Ok(v) => v,
-                Err(err) => {
-                    issues.push(AgentDoctorIssue {
-                        agent: slug.clone(),
-                        phase: phase.to_string(),
-                        kind: "template_missing".to_string(),
+                        kind: "generated_stale".to_string(),
                         detail: format!(
-                            "missing overlay template {}: {err}",
-                            overlay_path.display()
+                            "generated file differs from template {}",
+                            out_path.display()
                         ),
                     });
-                    continue;
                 }
-            };
-            let expected = render_command_template(&base, &overlay);
-            let actual = match fs::read_to_string(&out_path) {
-                Ok(v) => v,
-                Err(err) => {
-                    issues.push(AgentDoctorIssue {
-                        agent: slug.clone(),
-                        phase: phase.to_string(),
-                        kind: "generated_missing".to_string(),
-                        detail: format!("missing generated file {}: {err}", out_path.display()),
-                    });
-                    continue;
-                }
-            };
-            if actual != expected {
-                issues.push(AgentDoctorIssue {
-                    agent: slug.clone(),
-                    phase: phase.to_string(),
-                    kind: "generated_stale".to_string(),
-                    detail: format!("generated file differs from template {}", out_path.display()),
-                });
             }
         }
     }
@@ -192,8 +232,8 @@ fn print_agent_doctor_table(output: &AgentDoctorOutput) {
     }
     for issue in &output.issues {
         println!(
-            "agent doctor: issue: agent={} phase={} kind={} detail={}",
-            issue.agent, issue.phase, issue.kind, issue.detail
+            "agent doctor: issue: agent={} artifact={} phase={} kind={} detail={}",
+            issue.agent, issue.artifact, issue.phase, issue.kind, issue.detail
         );
     }
     println!(
@@ -203,7 +243,7 @@ fn print_agent_doctor_table(output: &AgentDoctorOutput) {
     );
 }
 
-fn render_command_template(base: &str, overlay: &str) -> String {
+fn render_template(base: &str, overlay: &str) -> String {
     let mut out = String::new();
     out.push_str(base.trim_end());
     out.push_str("\n\n---\n\n");
