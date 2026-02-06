@@ -115,4 +115,5 @@ Flags:
 - `index --rebuild`: full rebuild
 - `query --top-k <n>` default `10`
 - `query --format table|json` default `table`
-- `query --mode lexical|hybrid` default `lexical` (`hybrid` currently falls back to lexical ranking)
+- `query --mode lexical|hybrid` default `lexical`
+- `hybrid` combines lexical ranking and semantic similarity (RRF merge)

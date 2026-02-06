@@ -345,3 +345,106 @@ fn search_doctor_reports_ok_after_index() {
     let stdout = String::from_utf8_lossy(&doctor.stdout);
     assert!(stdout.contains("search doctor: ok"), "{stdout}");
 }
+
+#[test]
+fn search_hybrid_handles_near_match_query() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(
+        spec_dir.join("a.md"),
+        "# Authorization Policy\n\nThis spec defines authorization controls.",
+    )
+    .expect("write a");
+    fs::write(
+        spec_dir.join("b.md"),
+        "# Billing Rules\n\nInvoice and payment constraints.",
+    )
+    .expect("write b");
+
+    let init = run_foundry(&root, &["spec", "init", "--sync"]);
+    assert!(init.status.success(), "init failed");
+    let index = run_foundry(&root, &["spec", "search", "index"]);
+    assert!(index.status.success(), "index failed");
+
+    let lexical = run_foundry(
+        &root,
+        &[
+            "spec",
+            "search",
+            "query",
+            "authorisation policy",
+            "--mode",
+            "lexical",
+            "--format",
+            "json",
+        ],
+    );
+    assert!(lexical.status.success(), "lexical query failed");
+
+    let hybrid = run_foundry(
+        &root,
+        &[
+            "spec",
+            "search",
+            "query",
+            "authorisation policy",
+            "--mode",
+            "hybrid",
+            "--format",
+            "json",
+        ],
+    );
+    assert!(hybrid.status.success(), "hybrid query failed");
+    let output: serde_json::Value =
+        serde_json::from_slice(&hybrid.stdout).expect("parse hybrid output");
+    assert_eq!(output["mode"], "hybrid");
+    let hits = output["hits"].as_array().expect("hits array");
+    assert!(!hits.is_empty(), "hybrid should return at least one hit");
+    assert_eq!(hits[0]["id"], "SPC-001");
+}
+
+#[test]
+fn search_lexical_boosts_title_match() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(
+        spec_dir.join("a.md"),
+        "# Checkout Flow\n\nSimple checkout process.",
+    )
+    .expect("write a");
+    fs::write(
+        spec_dir.join("b.md"),
+        "# Payment Domain\n\ncheckout checkout checkout for edge text weight.",
+    )
+    .expect("write b");
+
+    let init = run_foundry(&root, &["spec", "init", "--sync"]);
+    assert!(init.status.success(), "init failed");
+    let index = run_foundry(&root, &["spec", "search", "index"]);
+    assert!(index.status.success(), "index failed");
+
+    let query = run_foundry(
+        &root,
+        &[
+            "spec",
+            "search",
+            "query",
+            "checkout flow",
+            "--mode",
+            "lexical",
+            "--format",
+            "json",
+            "--top-k",
+            "2",
+        ],
+    );
+    assert!(query.status.success(), "query failed");
+    let output: serde_json::Value =
+        serde_json::from_slice(&query.stdout).expect("parse query output");
+    let hits = output["hits"].as_array().expect("hits array");
+    assert_eq!(hits[0]["id"], "SPC-001");
+}
