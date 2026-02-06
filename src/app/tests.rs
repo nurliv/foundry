@@ -280,7 +280,7 @@
             snippet: "x".to_string(),
         }];
         let (related, conflicts) =
-            expand_ask_context(&hits, &map, 10, &AskEdgeWeightConfig::default());
+            ask::expand_ask_context(&hits, &map, 10, &AskEdgeWeightConfig::default());
         assert!(related.contains(&"SPC-002".to_string()));
         assert!(related.contains(&"SPC-003".to_string()));
         assert!(related.contains(&"SPC-004".to_string()));
@@ -337,7 +337,7 @@
             matched_terms: vec![],
             snippet: "root".to_string(),
         }];
-        let exps = build_ask_explanations(
+        let exps = ask::build_ask_explanations(
             "root dependency",
             &hits,
             &["SPC-002".to_string()],
