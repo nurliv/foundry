@@ -106,7 +106,7 @@ Template source options:
 - `--agent-output docs|install|both` (default `docs`)
 - `--codex-home <path>` override codex install root (default: `$CODEX_HOME`, then `$HOME/.codex`)
 - `--claude-dir <path>` override claude install root (default: `.claude`)
-- github mode downloads `<repo>/archive/<ref>.tar.gz`, extracts under `.foundry/template-sources/`, and reuses the extracted cache on later runs
+- github mode downloads `<repo>/archive/<ref>.tar.gz`, extracts under `.foundry/template-sources/`, and caches only the `templates/` subtree for later runs
 - temporary archive files are deleted after extraction
 - github fetch failure falls back to local `templates/`
 

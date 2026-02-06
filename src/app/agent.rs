@@ -270,7 +270,7 @@ fn resolve_template_base_root(config: &TemplateConfig) -> PathBuf {
     match config.source {
         TemplateSource::Local => local_root,
         TemplateSource::Github => match sync_templates_from_github(config) {
-            Ok(path) => path.join("templates"),
+            Ok(path) => path,
             Err(err) => {
                 eprintln!(
                     "agent template warning: failed to fetch templates from github ({err}). fallback to local templates."
@@ -288,7 +288,13 @@ fn sync_templates_from_github(config: &TemplateConfig) -> Result<PathBuf> {
     let repo_dir = cache_root.join(&key);
 
     if repo_dir.exists() {
-        return Ok(repo_dir);
+        if repo_dir.join("commands").is_dir() && repo_dir.join("skills").is_dir() {
+            return Ok(repo_dir);
+        }
+        if repo_dir.join("templates").is_dir() {
+            return Ok(repo_dir.join("templates"));
+        }
+        let _ = fs::remove_dir_all(&repo_dir);
     }
 
     let archive_url = github_archive_url(&config.repo, &config.git_ref)?;
@@ -326,10 +332,17 @@ fn sync_templates_from_github(config: &TemplateConfig) -> Result<PathBuf> {
 
     let extracted_repo_root = detect_extracted_repo_root(&extract_tmp)
         .with_context(|| format!("failed to locate extracted repo root in {}", extract_tmp.display()))?;
-    fs::rename(&extracted_repo_root, &repo_dir).with_context(|| {
+    let templates_src = extracted_repo_root.join("templates");
+    if !templates_src.is_dir() {
+        anyhow::bail!(
+            "templates directory missing in extracted archive: {}",
+            templates_src.display()
+        );
+    }
+    fs::rename(&templates_src, &repo_dir).with_context(|| {
         format!(
             "failed moving extracted templates from {} to {}",
-            extracted_repo_root.display(),
+            templates_src.display(),
             repo_dir.display()
         )
     })?;

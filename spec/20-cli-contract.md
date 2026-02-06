@@ -35,7 +35,7 @@ Behavior:
 - `--template-source local|github` (default `github`)
 - `--template-repo <git_url>` (default `https://github.com/nurliv/foundry.git`)
 - `--template-ref <git_ref>` (default `main`)
-- `github` mode downloads `<repo>/archive/<ref>.tar.gz`, extracts to `.foundry/template-sources/`, then reuses local cache
+- `github` mode downloads `<repo>/archive/<ref>.tar.gz`, extracts to `.foundry/template-sources/`, and caches only `templates/`
 - downloaded archive file is deleted after extraction
 - If github fetch fails, generation falls back to local `templates/`.
 
