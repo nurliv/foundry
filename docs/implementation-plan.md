@@ -72,3 +72,13 @@ Done definition:
 Done definition:
 
 - planning commands produce stable table/json outputs that can be consumed by agents.
+
+## Milestone 8: Agent Template Bootstrap (MVP+)
+
+- add `spec init --agent <codex|claude>` command-template generation
+- compose templates from `templates/commands/base` + agent overlays
+- support safe regeneration with `--agent-sync`
+
+Done definition:
+
+- init can generate agent command templates into `docs/agents/<agent>/commands`.

@@ -52,6 +52,65 @@ fn init_creates_meta_json_and_lint_passes() {
 }
 
 #[test]
+fn init_with_agents_generates_command_templates() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(spec_dir.join("01-example.md"), "# Example\n\ncontent").expect("write markdown");
+
+    let init = run_foundry(
+        &root,
+        &[
+            "spec",
+            "init",
+            "--sync",
+            "--agent",
+            "codex",
+            "--agent",
+            "claude",
+        ],
+    );
+    assert!(
+        init.status.success(),
+        "init failed: {}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+
+    let codex = root.join("docs/agents/codex/commands/spec-plan.md");
+    let claude = root.join("docs/agents/claude/commands/spec-plan.md");
+    assert!(codex.exists(), "missing codex template");
+    assert!(claude.exists(), "missing claude template");
+
+    let codex_text = fs::read_to_string(codex).expect("read codex template");
+    let claude_text = fs::read_to_string(claude).expect("read claude template");
+    assert!(codex_text.contains("# spec-plan"));
+    assert!(codex_text.contains("Codex Overlay: spec-plan"));
+    assert!(claude_text.contains("Claude Overlay: spec-plan"));
+}
+
+#[test]
+fn init_agent_without_sync_does_not_overwrite_existing_template() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(spec_dir.join("01-example.md"), "# Example\n\ncontent").expect("write markdown");
+
+    let first = run_foundry(&root, &["spec", "init", "--sync", "--agent", "codex"]);
+    assert!(first.status.success(), "first init failed");
+
+    let target = root.join("docs/agents/codex/commands/spec-plan.md");
+    fs::write(&target, "CUSTOM\n").expect("write custom");
+
+    let second = run_foundry(&root, &["spec", "init", "--agent", "codex"]);
+    assert!(second.status.success(), "second init failed");
+
+    let text = fs::read_to_string(&target).expect("read template");
+    assert_eq!(text, "CUSTOM\n");
+}
+
+#[test]
 fn link_add_and_remove_updates_meta() {
     let root = tempdir().expect("create temp dir");
     let root = root.path();

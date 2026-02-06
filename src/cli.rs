@@ -34,6 +34,16 @@ pub(crate) enum SpecSubcommand {
 pub(crate) struct InitArgs {
     #[arg(long)]
     pub(crate) sync: bool,
+    #[arg(long, value_enum)]
+    pub(crate) agent: Vec<AgentTarget>,
+    #[arg(long)]
+    pub(crate) agent_sync: bool,
+}
+
+#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum AgentTarget {
+    Codex,
+    Claude,
 }
 
 #[derive(Args, Debug)]

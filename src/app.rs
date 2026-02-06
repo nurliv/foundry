@@ -114,7 +114,7 @@ fn run() -> Result<i32> {
     match cli.command {
         Command::Spec(spec) => match spec.command {
             SpecSubcommand::Init(args) => {
-                run_init(args.sync)?;
+                run_init(args.sync, &args.agent, args.agent_sync)?;
                 Ok(0)
             }
             SpecSubcommand::Lint(args) => Ok(run_lint(&args)?),

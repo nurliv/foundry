@@ -22,10 +22,18 @@ Behavior:
 
 - By default, only missing fields are filled.
 - Use `--sync` to rewrite generated fields (`title`, `hash`, path).
+- Optional: `--agent codex|claude` can be specified multiple times to generate agent command templates.
+- `--agent-sync` overwrites existing generated agent template files.
 
 Output:
 
 - summary counts (`created`, `updated`, `skipped`, `error`)
+- agent template summary (`written`, `skipped`, `errors`) when `--agent` is used
+
+Generated paths (`--agent`):
+
+- `docs/agents/<agent>/commands/*.md` from
+  `templates/commands/base/*.md` + `templates/commands/overlays/<agent>/*.md`
 
 ## `foundry spec lint`
 
