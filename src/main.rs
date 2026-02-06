@@ -215,6 +215,7 @@ const NODE_TYPES: &[&str] = &[
 const NODE_STATUSES: &[&str] = &["draft", "review", "active", "deprecated", "archived"];
 const EDGE_TYPES: &[&str] = &["depends_on", "refines", "conflicts_with", "tests", "impacts"];
 const EDGE_STATUSES: &[&str] = &["confirmed", "proposed"];
+const EMBEDDING_DIM: usize = 256;
 
 #[derive(Debug, Serialize)]
 struct DirectDependency {
@@ -756,12 +757,16 @@ fn run_search_index(rebuild: bool) -> Result<()> {
     let metas = load_all_meta(spec_root, &mut lint)?;
     let mut conn = open_search_db()?;
     ensure_search_schema(&mut conn)?;
+    let vec_available = ensure_sqlite_vec_ready(&conn)?;
     let tx = conn.transaction()?;
 
     if rebuild {
         tx.execute("DELETE FROM fts_chunks;", [])?;
         tx.execute("DELETE FROM chunks;", [])?;
         tx.execute("DELETE FROM chunk_vectors;", [])?;
+        if vec_available {
+            tx.execute("DELETE FROM vec_chunks;", [])?;
+        }
         tx.execute("DELETE FROM nodes;", [])?;
     }
 
@@ -792,6 +797,9 @@ fn run_search_index(rebuild: bool) -> Result<()> {
         tx.execute("DELETE FROM fts_chunks WHERE node_id = ?1", params![meta.id])?;
         tx.execute("DELETE FROM chunks WHERE node_id = ?1", params![meta.id])?;
         tx.execute("DELETE FROM chunk_vectors WHERE chunk_id LIKE ?1", params![format!("{}:%", meta.id)])?;
+        if vec_available {
+            tx.execute("DELETE FROM vec_chunks WHERE chunk_id LIKE ?1", params![format!("{}:%", meta.id)])?;
+        }
         tx.execute(
             "INSERT INTO nodes (id, title, md_path, meta_path, hash, terms_json, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT(id) DO UPDATE SET title=excluded.title, md_path=excluded.md_path, meta_path=excluded.meta_path, hash=excluded.hash, terms_json=excluded.terms_json, updated_at=excluded.updated_at",
@@ -819,6 +827,12 @@ fn run_search_index(rebuild: bool) -> Result<()> {
                     vector_to_blob(&embedding)
                 ],
             )?;
+            if vec_available {
+                tx.execute(
+                    "INSERT INTO vec_chunks (chunk_id, embedding) VALUES (?1, ?2)",
+                    params![format!("{}:{idx}", meta.id), vector_to_json(&embedding)],
+                )?;
+            }
         }
         summary.indexed += 1;
     }
@@ -838,6 +852,9 @@ fn run_search_index(rebuild: bool) -> Result<()> {
         tx.execute("DELETE FROM fts_chunks WHERE node_id = ?1", params![id])?;
         tx.execute("DELETE FROM chunks WHERE node_id = ?1", params![id])?;
         tx.execute("DELETE FROM chunk_vectors WHERE chunk_id LIKE ?1", params![format!("{id}:%")])?;
+        if vec_available {
+            tx.execute("DELETE FROM vec_chunks WHERE chunk_id LIKE ?1", params![format!("{id}:%")])?;
+        }
         tx.execute("DELETE FROM nodes WHERE id = ?1", params![id])?;
         summary.deleted += 1;
     }
@@ -956,6 +973,78 @@ fn collect_lexical_candidates(
 }
 
 fn collect_semantic_candidates(conn: &Connection, query: &str) -> Result<Vec<SemanticCandidate>> {
+    if sqlite_vec_available(conn) {
+        if let Ok(from_vec) = collect_semantic_candidates_with_sqlite_vec(conn, query) {
+            if !from_vec.is_empty() {
+                return Ok(from_vec);
+            }
+        }
+    }
+    collect_semantic_candidates_from_local_store(conn, query)
+}
+
+fn collect_semantic_candidates_with_sqlite_vec(
+    conn: &Connection,
+    query: &str,
+) -> Result<Vec<SemanticCandidate>> {
+    let query_vec_json = vector_to_json(&semantic_vector(query));
+    let mut stmt = conn.prepare(
+        "
+        SELECT
+            n.id,
+            n.title,
+            n.md_path,
+            n.terms_json,
+            SUBSTR(c.text, 1, 220) AS snippet,
+            vc.distance
+        FROM vec_chunks vc
+        JOIN chunks c ON c.chunk_id = vc.chunk_id
+        JOIN nodes n ON n.id = c.node_id
+        WHERE embedding MATCH ?1 AND k = ?2
+        ",
+    )?;
+    let mut rows = stmt.query(params![query_vec_json, 60_i64])?;
+    let mut by_node = HashMap::<String, SemanticCandidate>::new();
+    while let Some(row) = rows.next()? {
+        let id: String = row.get(0)?;
+        let title: String = row.get(1)?;
+        let path: String = row.get(2)?;
+        let terms_json: String = row.get(3)?;
+        let snippet: String = row.get(4)?;
+        let distance: f64 = row.get(5)?;
+        let score = 1.0 / (1.0 + distance.max(0.0));
+        if score < 0.2 {
+            continue;
+        }
+        let terms: Vec<String> = serde_json::from_str(&terms_json).unwrap_or_default();
+        let candidate = SemanticCandidate {
+            id: id.clone(),
+            title,
+            path,
+            terms,
+            snippet: snippet.replace('\n', " "),
+            semantic_score: score,
+        };
+        match by_node.get(&id) {
+            Some(existing) if existing.semantic_score >= candidate.semantic_score => {}
+            _ => {
+                by_node.insert(id, candidate);
+            }
+        }
+    }
+    let mut out = by_node.into_values().collect::<Vec<_>>();
+    out.sort_by(|a, b| {
+        b.semantic_score
+            .total_cmp(&a.semantic_score)
+            .then(a.id.cmp(&b.id))
+    });
+    Ok(out)
+}
+
+fn collect_semantic_candidates_from_local_store(
+    conn: &Connection,
+    query: &str,
+) -> Result<Vec<SemanticCandidate>> {
     let query_vec = semantic_vector(query);
     let mut stmt = conn.prepare(
         "
@@ -1162,6 +1251,50 @@ fn ensure_search_schema(conn: &mut Connection) -> Result<()> {
     Ok(())
 }
 
+fn ensure_sqlite_vec_ready(conn: &Connection) -> Result<bool> {
+    if !sqlite_vec_available(conn) {
+        let _ = try_load_sqlite_vec_extension(conn);
+    }
+    if !sqlite_vec_available(conn) {
+        return Ok(false);
+    }
+    conn.execute_batch(
+        &format!(
+            "
+            CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
+                chunk_id TEXT,
+                embedding FLOAT[{EMBEDDING_DIM}]
+            );
+            "
+        ),
+    )?;
+    Ok(true)
+}
+
+fn sqlite_vec_available(conn: &Connection) -> bool {
+    conn.query_row(
+        "SELECT COUNT(*) FROM pragma_module_list WHERE name = 'vec0'",
+        [],
+        |row| row.get::<_, i64>(0),
+    )
+    .map(|count| count > 0)
+    .unwrap_or(false)
+}
+
+fn try_load_sqlite_vec_extension(conn: &Connection) -> Result<()> {
+    let path = match std::env::var("FOUNDRY_SQLITE_VEC_PATH") {
+        Ok(v) if !v.trim().is_empty() => v,
+        _ => return Ok(()),
+    };
+    unsafe {
+        conn.load_extension_enable()?;
+        let load_result = conn.load_extension(Path::new(&path), None);
+        conn.load_extension_disable()?;
+        load_result?;
+    }
+    Ok(())
+}
+
 fn ensure_search_schema_readonly(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "
@@ -1195,6 +1328,7 @@ fn ensure_search_schema_readonly(conn: &Connection) -> Result<()> {
         );
         ",
     )?;
+    let _ = ensure_sqlite_vec_ready(conn);
     Ok(())
 }
 
@@ -1387,12 +1521,11 @@ fn ranking_boost(query: &str, title: &str, terms: &[String]) -> f64 {
 }
 
 fn semantic_vector(text: &str) -> Vec<f64> {
-    const DIM: usize = 256;
-    let mut vec = vec![0.0_f64; DIM];
+    let mut vec = vec![0.0_f64; EMBEDDING_DIM];
     let normalized = text.to_ascii_lowercase();
 
     for token in tokenize(&normalized) {
-        let idx = stable_hash(token.as_bytes()) % DIM;
+        let idx = stable_hash(token.as_bytes()) % EMBEDDING_DIM;
         vec[idx] += 2.0;
     }
     let compact: String = normalized
@@ -1402,7 +1535,7 @@ fn semantic_vector(text: &str) -> Vec<f64> {
     let chars: Vec<char> = compact.chars().collect();
     for window in chars.windows(3) {
         let gram = window.iter().collect::<String>();
-        let idx = stable_hash(gram.as_bytes()) % DIM;
+        let idx = stable_hash(gram.as_bytes()) % EMBEDDING_DIM;
         vec[idx] += 1.0;
     }
 
@@ -1420,6 +1553,19 @@ fn vector_to_blob(vec: &[f64]) -> Vec<u8> {
     for value in vec {
         out.extend_from_slice(&value.to_le_bytes());
     }
+    out
+}
+
+fn vector_to_json(vec: &[f64]) -> String {
+    let mut out = String::with_capacity(vec.len() * 8 + 2);
+    out.push('[');
+    for (idx, value) in vec.iter().enumerate() {
+        if idx > 0 {
+            out.push(',');
+        }
+        out.push_str(&format!("{value:.8}"));
+    }
+    out.push(']');
     out
 }
 
@@ -2150,5 +2296,13 @@ mod tests {
         for (a, b) in vec.iter().zip(decoded.iter()) {
             assert!((a - b).abs() < 1e-12);
         }
+    }
+
+    #[test]
+    fn vector_json_shape() {
+        let json = vector_to_json(&[0.1, 0.2, -0.3]);
+        assert!(json.starts_with('['));
+        assert!(json.ends_with(']'));
+        assert!(json.contains(','));
     }
 }

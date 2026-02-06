@@ -100,7 +100,7 @@ Notes:
 Subcommands:
 
 - `index`: build or update search index from `spec/**/*.md` and `spec/**/*.meta.json`
-- `query`: run lexical search (hybrid flag is accepted for forward compatibility)
+- `query`: run lexical or hybrid search
 - `doctor`: verify index consistency against current node hashes
 
 Examples:
@@ -118,3 +118,4 @@ Flags:
 - `query --mode lexical|hybrid` default `lexical`
 - `hybrid` combines lexical ranking and semantic similarity (RRF merge)
 - semantic similarity in `hybrid` is computed from pre-indexed chunk vectors (`spec search index`)
+- if `FOUNDRY_SQLITE_VEC_PATH` is set, the tool loads `sqlite-vec` and uses `vec0` search; otherwise it falls back to local cosine ranking
