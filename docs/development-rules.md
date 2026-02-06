@@ -22,3 +22,7 @@ This file stores incremental engineering rules and decisions for this repository
 ## Node Layout Rule
 
 - Task node markdown/meta should default to `tasks/<source-node-id>/...` rather than `spec/...` for better operational visibility.
+
+## Codex Output Rule
+
+- In install mode, Codex command templates must be generated under `<codex_home>/prompts/`.

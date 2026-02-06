@@ -482,10 +482,18 @@ fn install_path(
     config: &TemplateConfig,
 ) -> PathBuf {
     match agent {
-        AgentTarget::Codex => resolve_codex_home(config)
-            .join(artifact.output_subdir)
-            .join("foundry")
-            .join(format!("{phase}.md")),
+        AgentTarget::Codex => {
+            if artifact.output_subdir == "commands" {
+                resolve_codex_home(config)
+                    .join("prompts")
+                    .join(format!("{phase}.md"))
+            } else {
+                resolve_codex_home(config)
+                    .join(artifact.output_subdir)
+                    .join("foundry")
+                    .join(format!("{phase}.md"))
+            }
+        }
         AgentTarget::Claude => resolve_claude_dir(config)
             .join(artifact.output_subdir)
             .join("foundry")

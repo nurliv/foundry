@@ -145,7 +145,8 @@ Generated paths (`--agent`):
 - `templates/node-docs/design.md`
 - `templates/node-docs/task.md`
 - install output (`--agent-output install|both`):
-- codex: `<codex_home>/{commands|skills}/foundry/*.md`
+- codex commands: `<codex_home>/prompts/*.md`
+- codex skills: `<codex_home>/skills/foundry/*.md`
 - claude: `<claude_dir>/{commands|skills}/foundry/*.md`
 
 Supported template placeholders:
@@ -178,7 +179,8 @@ Rules:
 - `docs/agents/<agent>/commands/*.md`
 - `docs/agents/<agent>/skills/*.md`
 - install mode compares:
-- codex: `<codex_home>/{commands|skills}/foundry/*.md`
+- codex commands: `<codex_home>/prompts/*.md`
+- codex skills: `<codex_home>/skills/foundry/*.md`
 - claude: `<claude_dir>/{commands|skills}/foundry/*.md`
 - with rendered content from matching `templates/{commands|skills}/...` files
 

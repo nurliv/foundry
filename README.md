@@ -131,7 +131,8 @@ Generated outputs:
 - implement/impl-review templates include task status transition commands via `spec write --id <TASK-ID> --status ...`
 - design/task planning templates prioritize `spec derive design` / `spec derive tasks` over manual link wiring
 - install mode:
-- codex: `<codex_home>/{commands|skills}/foundry/*.md`
+- codex commands: `<codex_home>/prompts/*.md`
+- codex skills: `<codex_home>/skills/foundry/*.md`
 - claude: `<claude_dir>/{commands|skills}/foundry/*.md`
 
 Supported placeholders:

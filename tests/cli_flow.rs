@@ -689,7 +689,7 @@ fn init_with_agents_install_output_writes_agent_auto_read_dirs() {
         String::from_utf8_lossy(&init.stderr)
     );
 
-    let codex_cmd = codex_home.join("commands/foundry/spec-plan.md");
+    let codex_cmd = codex_home.join("prompts/spec-plan.md");
     let codex_skill = codex_home.join("skills/foundry/spec-plan.md");
     let claude_cmd = claude_dir.join("commands/foundry/spec-plan.md");
     let claude_skill = claude_dir.join("skills/foundry/spec-plan.md");
