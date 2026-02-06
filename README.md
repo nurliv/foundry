@@ -45,6 +45,7 @@ foundry spec derive design --from SPC-001 --path spec/40-auth-design.md --type c
 
 # 6) Derive implementation task from design node
 foundry spec derive tasks --from SPC-010 --path spec/60-auth-task.md --type implementation_task --status todo
+foundry spec derive tasks --from SPC-010 --item "API" --item "DB Migration" --item "Tests" --chain
 
 # 7) Build search index
 foundry spec search index

@@ -362,6 +362,103 @@ fn derive_tasks_fails_for_unknown_depends_on_target() {
 }
 
 #[test]
+fn derive_tasks_with_items_creates_multiple_task_nodes() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(spec_dir.join("10-design-a.md"), "# Design A\n\ncontent").expect("write design a");
+
+    let init = run_foundry(&root, &["spec", "init", "--sync"]);
+    assert!(init.status.success(), "init failed");
+
+    let derive = run_foundry(
+        &root,
+        &[
+            "spec",
+            "derive",
+            "tasks",
+            "--from",
+            "SPC-001",
+            "--item",
+            "API Implementation",
+            "--item",
+            "Database Migration",
+            "--item",
+            "Integration Tests",
+            "--type",
+            "implementation_task",
+            "--status",
+            "todo",
+        ],
+    );
+    assert!(
+        derive.status.success(),
+        "derive tasks with items failed: {}",
+        String::from_utf8_lossy(&derive.stderr)
+    );
+
+    let generated = [
+        "task-spc-001-01-api-implementation.meta.json",
+        "task-spc-001-02-database-migration.meta.json",
+        "task-spc-001-03-integration-tests.meta.json",
+    ];
+    for file in generated {
+        let meta_path = spec_dir.join(file);
+        assert!(meta_path.exists(), "missing generated meta: {file}");
+        let meta: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(meta_path).expect("read meta")).expect("parse meta");
+        assert_eq!(meta["type"], "implementation_task");
+        let edges = meta["edges"].as_array().expect("edges should be array");
+        assert!(edges.iter().any(|e| e["type"] == "refines" && e["to"] == "SPC-001"));
+    }
+}
+
+#[test]
+fn derive_tasks_with_chain_adds_dependency_to_previous_generated_task() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(spec_dir.join("10-design-a.md"), "# Design A\n\ncontent").expect("write design a");
+
+    let init = run_foundry(&root, &["spec", "init", "--sync"]);
+    assert!(init.status.success(), "init failed");
+
+    let derive = run_foundry(
+        &root,
+        &[
+            "spec",
+            "derive",
+            "tasks",
+            "--from",
+            "SPC-001",
+            "--item",
+            "First",
+            "--item",
+            "Second",
+            "--chain",
+        ],
+    );
+    assert!(derive.status.success(), "derive tasks with chain failed");
+
+    let first_meta: serde_json::Value =
+        serde_json::from_str(
+            &fs::read_to_string(spec_dir.join("task-spc-001-01-first.meta.json")).expect("read first"),
+        )
+        .expect("parse first");
+    let second_meta: serde_json::Value =
+        serde_json::from_str(
+            &fs::read_to_string(spec_dir.join("task-spc-001-02-second.meta.json")).expect("read second"),
+        )
+        .expect("parse second");
+
+    let first_id = first_meta["id"].as_str().expect("first id").to_string();
+    let second_edges = second_meta["edges"].as_array().expect("second edges");
+    assert!(second_edges.iter().any(|e| e["type"] == "depends_on" && e["to"] == first_id));
+}
+
+#[test]
 fn init_with_agents_generates_command_templates() {
     let root = tempdir().expect("create temp dir");
     let root = root.path();

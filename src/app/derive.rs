@@ -84,22 +84,94 @@ fn run_derive_tasks(args: &DeriveTasksArgs) -> Result<()> {
     if args.body.is_some() && args.body_file.is_some() {
         anyhow::bail!("--body and --body-file cannot be used together");
     }
+    if !args.items.is_empty()
+        && (args.path.is_some() || args.title.is_some() || args.body.is_some() || args.body_file.is_some())
+    {
+        anyhow::bail!("--item mode cannot be combined with --path/--title/--body/--body-file");
+    }
 
-    let path = args
-        .path
-        .clone()
-        .unwrap_or_else(|| default_task_path(&args.from));
-    let title = args
-        .title
-        .clone()
-        .unwrap_or_else(|| format!("Task for {}", from_meta.title));
-    let body = match (&args.body, &args.body_file) {
-        (Some(body), _) => body.clone(),
-        (None, Some(body_file)) => fs::read_to_string(body_file)
-            .with_context(|| format!("failed reading --body-file: {body_file}"))?,
-        (None, None) => default_task_body(from_meta, &title),
+    let task_ids = if args.items.is_empty() {
+        let path = args
+            .path
+            .clone()
+            .unwrap_or_else(|| default_task_path(&args.from));
+        let title = args
+            .title
+            .clone()
+            .unwrap_or_else(|| format!("Task for {}", from_meta.title));
+        let body = match (&args.body, &args.body_file) {
+            (Some(body), _) => body.clone(),
+            (None, Some(body_file)) => fs::read_to_string(body_file)
+                .with_context(|| format!("failed reading --body-file: {body_file}"))?,
+            (None, None) => default_task_body(from_meta, &title),
+        };
+        let task_id = write_task_node(args, path, title, body)?;
+        vec![task_id]
+    } else {
+        let mut ids = Vec::new();
+        for (i, item) in args.items.iter().enumerate() {
+            let title = item.trim();
+            if title.is_empty() {
+                anyhow::bail!("--item cannot be empty");
+            }
+            let path = default_task_item_path(&args.from, i + 1, title);
+            let body = default_task_body(from_meta, title);
+            let task_id = write_task_node(args, path, title.to_string(), body)?;
+            ids.push(task_id);
+        }
+        ids
     };
 
+    let mut lint = LintState::default();
+    let metas = load_all_meta(spec_root, &mut lint)?;
+    let mut by_id = to_meta_map(metas);
+    for dep_id in &args.depends_on {
+        if !by_id.contains_key(dep_id) {
+            anyhow::bail!("depends-on target not found: {dep_id}");
+        }
+    }
+
+    for (idx, task_id) in task_ids.iter().enumerate() {
+        if *task_id == args.from {
+            anyhow::bail!("derived node id is identical to source id: {}", args.from);
+        }
+        let (path, task_meta) = by_id
+            .get_mut(task_id)
+            .with_context(|| format!("derived node not found after write: {task_id}"))?;
+        upsert_refines_edge(task_meta, &args.from, &args.rationale);
+        for dep_id in &args.depends_on {
+            upsert_edge(
+                task_meta,
+                dep_id,
+                "depends_on",
+                "task dependency",
+                1.0,
+                "confirmed",
+            );
+        }
+        if args.chain && idx > 0 {
+            upsert_edge(
+                task_meta,
+                &task_ids[idx - 1],
+                "depends_on",
+                "auto chain dependency",
+                1.0,
+                "confirmed",
+            );
+        }
+        write_meta_json(path, task_meta)?;
+    }
+    println!(
+        "spec derive tasks: source={} derived={} deps={} chain={}",
+        args.from,
+        task_ids.len(),
+        args.depends_on.len(),
+        args.chain
+    );
+    Ok(())
+}
+
+fn write_task_node(args: &DeriveTasksArgs, path: String, title: String, body: String) -> Result<String> {
     let write_args = WriteArgs {
         path: Some(path),
         id: None,
@@ -110,41 +182,7 @@ fn run_derive_tasks(args: &DeriveTasksArgs) -> Result<()> {
         body_file: None,
         terms: args.terms.clone(),
     };
-    let task_id = super::write::run_write(&write_args)?;
-    if task_id == args.from {
-        anyhow::bail!("derived node id is identical to source id: {}", args.from);
-    }
-
-    let mut lint = LintState::default();
-    let metas = load_all_meta(spec_root, &mut lint)?;
-    let mut by_id = to_meta_map(metas);
-    for dep_id in &args.depends_on {
-        if !by_id.contains_key(dep_id) {
-            anyhow::bail!("depends-on target not found: {dep_id}");
-        }
-    }
-    let (path, task_meta) = by_id
-        .get_mut(&task_id)
-        .with_context(|| format!("derived node not found after write: {task_id}"))?;
-    upsert_refines_edge(task_meta, &args.from, &args.rationale);
-    for dep_id in &args.depends_on {
-        upsert_edge(
-            task_meta,
-            dep_id,
-            "depends_on",
-            "task dependency",
-            1.0,
-            "confirmed",
-        );
-    }
-    write_meta_json(path, task_meta)?;
-    println!(
-        "spec derive tasks: source={} derived={} edge=refines deps={}",
-        args.from,
-        task_id,
-        args.depends_on.len()
-    );
-    Ok(())
+    super::write::run_write(&write_args)
 }
 
 fn upsert_refines_edge(meta: &mut SpecNodeMeta, to: &str, rationale: &str) {
@@ -191,6 +229,24 @@ fn default_design_body(source: &SpecNodeMeta, title: &str) -> String {
 
 fn default_task_path(from_id: &str) -> String {
     format!("spec/task-{}.md", from_id.to_ascii_lowercase())
+}
+
+fn default_task_item_path(from_id: &str, index: usize, title: &str) -> String {
+    let slug = title
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .collect::<String>()
+        .split('-')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    let slug = if slug.is_empty() { "task".to_string() } else { slug };
+    format!(
+        "spec/task-{}-{:02}-{}.md",
+        from_id.to_ascii_lowercase(),
+        index,
+        slug
+    )
 }
 
 fn default_task_body(source: &SpecNodeMeta, title: &str) -> String {

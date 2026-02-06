@@ -83,6 +83,10 @@ pub(crate) struct DeriveTasksArgs {
     pub(crate) body: Option<String>,
     #[arg(long)]
     pub(crate) body_file: Option<String>,
+    #[arg(long = "item")]
+    pub(crate) items: Vec<String>,
+    #[arg(long)]
+    pub(crate) chain: bool,
     #[arg(long, default_value = "derived task from design node")]
     pub(crate) rationale: String,
     #[arg(long = "depends-on")]

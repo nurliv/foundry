@@ -102,6 +102,7 @@ Examples (`tasks`):
 
 - `foundry spec derive tasks --from SPC-010 --path spec/60-auth-task.md --type implementation_task --status todo`
 - `foundry spec derive tasks --from SPC-010 --depends-on SPC-020 --depends-on SPC-021`
+- `foundry spec derive tasks --from SPC-010 --item "API" --item "DB Migration" --item "Tests" --chain`
 
 Rules (`tasks`):
 
@@ -110,6 +111,8 @@ Rules (`tasks`):
 - when `--path` is omitted, default path is `spec/task-<from-id-lower>.md`
 - generated/updated task node gets a confirmed `refines` edge to source node
 - `--depends-on` adds confirmed `depends_on` edges from derived task to given node ids
+- `--item` can be repeated to generate multiple task nodes in one command
+- `--chain` adds auto `depends_on` edges from each generated task to the previous generated task
 - if `--body` and `--body-file` are omitted, a default task skeleton body is generated
 
 Generated paths (`--agent`):
