@@ -42,6 +42,7 @@ pub(crate) struct DeriveCommand {
 #[derive(Subcommand, Debug)]
 pub(crate) enum DeriveSubcommand {
     Design(DeriveDesignArgs),
+    Tasks(DeriveTasksArgs),
 }
 
 #[derive(Args, Debug)]
@@ -62,6 +63,30 @@ pub(crate) struct DeriveDesignArgs {
     pub(crate) body_file: Option<String>,
     #[arg(long, default_value = "derived design from source spec")]
     pub(crate) rationale: String,
+    #[arg(long = "term")]
+    pub(crate) terms: Vec<String>,
+}
+
+#[derive(Args, Debug)]
+pub(crate) struct DeriveTasksArgs {
+    #[arg(long)]
+    pub(crate) from: String,
+    #[arg(long)]
+    pub(crate) path: Option<String>,
+    #[arg(long)]
+    pub(crate) title: Option<String>,
+    #[arg(long = "type", default_value = "implementation_task")]
+    pub(crate) node_type: String,
+    #[arg(long, default_value = "todo")]
+    pub(crate) status: String,
+    #[arg(long)]
+    pub(crate) body: Option<String>,
+    #[arg(long)]
+    pub(crate) body_file: Option<String>,
+    #[arg(long, default_value = "derived task from design node")]
+    pub(crate) rationale: String,
+    #[arg(long = "depends-on")]
+    pub(crate) depends_on: Vec<String>,
     #[arg(long = "term")]
     pub(crate) terms: Vec<String>,
 }

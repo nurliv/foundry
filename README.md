@@ -15,6 +15,7 @@ Foundry keeps human-readable specs in Markdown while tracking machine-usable gra
 - `spec init`: generate/sync meta files from Markdown
 - `spec write`: create/update one spec node markdown + meta in one command
 - `spec derive design`: generate/update a design node from a source spec node and auto-link with `refines`
+- `spec derive tasks`: generate/update a task node from a design node and auto-link with `refines`
 - `spec lint`: consistency checks with table/json output
 - `spec link`: edge CRUD and proposal support
 - `spec impact`: blast-radius and review-order analysis
@@ -41,10 +42,13 @@ foundry spec write --path spec/10-auth.md --body "# Auth\n\n..." --type feature_
 # 5) Derive design from spec node
 foundry spec derive design --from SPC-001 --path spec/40-auth-design.md --type component_design --status review
 
-# 6) Build search index
+# 6) Derive implementation task from design node
+foundry spec derive tasks --from SPC-010 --path spec/60-auth-task.md --type implementation_task --status todo
+
+# 7) Build search index
 foundry spec search index
 
-# 7) Ask and inspect impact
+# 8) Ask and inspect impact
 foundry spec ask "what should I implement first?" --format json --explain
 foundry spec impact SPC-001 --format json
 ```

@@ -16,6 +16,7 @@ Drive this phase with graph-traceable decisions and reproducible CLI evidence.
 
 ## Core Commands
 - foundry spec write --path spec/<NN-task-topic>.md --body-file <task.md> --type implementation_task --status todo
+- foundry spec derive tasks --from <DESIGN-ID> --path spec/<NN-task-topic>.md --type implementation_task --status todo
 - foundry spec init --sync
 - foundry spec plan ready --format json
 - foundry spec plan batches --format json

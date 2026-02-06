@@ -80,6 +80,7 @@ Flags:
 Subcommands:
 
 - `design`: derive or update one design node from a source node
+- `tasks`: derive or update one task node from a source design node
 
 Examples:
 
@@ -93,6 +94,20 @@ Rules (`design`):
 - when `--path` is omitted, default path is `spec/design-<from-id-lower>.md`
 - generated/updated design node gets a confirmed `refines` edge to source node
 - if `--body` and `--body-file` are omitted, a default design skeleton body is generated
+
+Examples (`tasks`):
+
+- `foundry spec derive tasks --from SPC-010 --path spec/60-auth-task.md --type implementation_task --status todo`
+- `foundry spec derive tasks --from SPC-010 --depends-on SPC-020 --depends-on SPC-021`
+
+Rules (`tasks`):
+
+- `--from` source node id is required and must exist
+- derived node is written through `spec write`
+- when `--path` is omitted, default path is `spec/task-<from-id-lower>.md`
+- generated/updated task node gets a confirmed `refines` edge to source node
+- `--depends-on` adds confirmed `depends_on` edges from derived task to given node ids
+- if `--body` and `--body-file` are omitted, a default task skeleton body is generated
 
 Generated paths (`--agent`):
 

@@ -229,6 +229,98 @@ fn derive_design_fails_when_source_missing() {
 }
 
 #[test]
+fn derive_tasks_creates_task_node_with_refines_and_depends_on() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+
+    fs::write(spec_dir.join("10-design-a.md"), "# Design A\n\ncontent").expect("write design a");
+    fs::write(spec_dir.join("11-design-b.md"), "# Design B\n\ncontent").expect("write design b");
+    let init = run_foundry(&root, &["spec", "init", "--sync"]);
+    assert!(init.status.success(), "init failed");
+
+    let task1 = run_foundry(
+        &root,
+        &[
+            "spec",
+            "derive",
+            "tasks",
+            "--from",
+            "SPC-001",
+            "--path",
+            "spec/50-task-a.md",
+            "--type",
+            "implementation_task",
+            "--status",
+            "todo",
+        ],
+    );
+    assert!(task1.status.success(), "task1 derive failed");
+
+    let task2 = run_foundry(
+        &root,
+        &[
+            "spec",
+            "derive",
+            "tasks",
+            "--from",
+            "SPC-002",
+            "--path",
+            "spec/51-task-b.md",
+            "--type",
+            "implementation_task",
+            "--status",
+            "todo",
+            "--depends-on",
+            "SPC-003",
+        ],
+    );
+    assert!(
+        task2.status.success(),
+        "task2 derive failed: {}",
+        String::from_utf8_lossy(&task2.stderr)
+    );
+
+    let task2_meta: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(spec_dir.join("51-task-b.meta.json")).expect("read task2 meta"))
+            .expect("parse task2 meta");
+    assert_eq!(task2_meta["type"], "implementation_task");
+    assert_eq!(task2_meta["status"], "todo");
+    let edges = task2_meta["edges"].as_array().expect("edges array");
+    assert!(edges.iter().any(|e| e["type"] == "refines" && e["to"] == "SPC-002"));
+    assert!(edges.iter().any(|e| e["type"] == "depends_on" && e["to"] == "SPC-003"));
+}
+
+#[test]
+fn derive_tasks_fails_for_unknown_depends_on_target() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(spec_dir.join("10-design-a.md"), "# Design A\n\ncontent").expect("write design a");
+
+    let init = run_foundry(&root, &["spec", "init", "--sync"]);
+    assert!(init.status.success(), "init failed");
+
+    let task = run_foundry(
+        &root,
+        &[
+            "spec",
+            "derive",
+            "tasks",
+            "--from",
+            "SPC-001",
+            "--path",
+            "spec/50-task-a.md",
+            "--depends-on",
+            "SPC-999",
+        ],
+    );
+    assert!(!task.status.success(), "derive should fail on unknown depends-on");
+}
+
+#[test]
 fn init_with_agents_generates_command_templates() {
     let root = tempdir().expect("create temp dir");
     let root = root.path();
