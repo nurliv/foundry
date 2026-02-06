@@ -61,6 +61,8 @@ Rules:
 - `from`, `to`, `type` required for `add`
 - `confidence` default is `1.0` for manual links
 - `propose` creates edges with `status=proposed`
+- `propose --from --to --type` creates/updates one manual proposal
+- `propose --node <ID>` auto-generates ranked proposals for that node (MVP heuristic mode)
 
 ## `foundry spec impact`
 

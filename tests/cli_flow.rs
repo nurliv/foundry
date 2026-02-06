@@ -1,16 +1,7 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
-
-fn unique_temp_dir() -> PathBuf {
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock drift")
-        .as_nanos();
-    let pid = std::process::id();
-    std::env::temp_dir().join(format!("foundry-test-{pid}-{ts}"))
-}
+use tempfile::tempdir;
 
 fn run_foundry(workdir: &Path, args: &[&str]) -> std::process::Output {
     let bin = assert_cmd::cargo::cargo_bin!("foundry");
@@ -23,7 +14,8 @@ fn run_foundry(workdir: &Path, args: &[&str]) -> std::process::Output {
 
 #[test]
 fn init_creates_meta_json_and_lint_passes() {
-    let root = unique_temp_dir();
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
     let spec_dir = root.join("spec");
     fs::create_dir_all(&spec_dir).expect("create spec dir");
 
@@ -57,13 +49,12 @@ fn init_creates_meta_json_and_lint_passes() {
         String::from_utf8_lossy(&lint.stdout),
         String::from_utf8_lossy(&lint.stderr)
     );
-
-    fs::remove_dir_all(&root).expect("cleanup temp dir");
 }
 
 #[test]
 fn link_add_and_remove_updates_meta() {
-    let root = unique_temp_dir();
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
     let spec_dir = root.join("spec");
     fs::create_dir_all(&spec_dir).expect("create spec dir");
     fs::write(spec_dir.join("a.md"), "# A").expect("write a");
@@ -113,13 +104,12 @@ fn link_add_and_remove_updates_meta() {
     let a_meta_after =
         fs::read_to_string(spec_dir.join("a.meta.json")).expect("read a meta after remove");
     assert!(!a_meta_after.contains("\"to\": \"SPC-002\""));
-
-    fs::remove_dir_all(&root).expect("cleanup temp dir");
 }
 
 #[test]
 fn impact_supports_depth_and_json_format() {
-    let root = unique_temp_dir();
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
     let spec_dir = root.join("spec");
     fs::create_dir_all(&spec_dir).expect("create spec dir");
     fs::write(spec_dir.join("a.md"), "# A").expect("write a");
@@ -206,13 +196,12 @@ fn impact_supports_depth_and_json_format() {
         .expect("review order should be an array");
     assert_eq!(order_depth_2.len(), 3);
     assert_eq!(json_depth_2["depth"], 2);
-
-    fs::remove_dir_all(&root).expect("cleanup temp dir");
 }
 
 #[test]
 fn lint_detects_term_key_drift() {
-    let root = unique_temp_dir();
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
     let spec_dir = root.join("spec");
     fs::create_dir_all(&spec_dir).expect("create spec dir");
     fs::write(spec_dir.join("a.md"), "# A").expect("write a");
@@ -247,6 +236,48 @@ fn lint_detects_term_key_drift() {
     assert!(!lint.status.success(), "lint should fail on term drift");
     let stdout = String::from_utf8_lossy(&lint.stdout);
     assert!(stdout.contains("term key drift detected"), "{stdout}");
+}
 
-    fs::remove_dir_all(&root).expect("cleanup temp dir");
+#[test]
+fn link_propose_creates_proposed_edge() {
+    let root = tempdir().expect("create temp dir");
+    let root = root.path();
+    let spec_dir = root.join("spec");
+    fs::create_dir_all(&spec_dir).expect("create spec dir");
+    fs::write(spec_dir.join("a.md"), "# Account User").expect("write a");
+    fs::write(spec_dir.join("b.md"), "# User Profile").expect("write b");
+
+    let init = run_foundry(&root, &["spec", "init", "--sync"]);
+    assert!(init.status.success(), "init failed");
+
+    let mut a_meta: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(spec_dir.join("a.meta.json")).expect("read a"))
+            .expect("parse a");
+    let mut b_meta: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(spec_dir.join("b.meta.json")).expect("read b"))
+            .expect("parse b");
+    a_meta["type"] = serde_json::Value::String("product_goal".to_string());
+    a_meta["terms"] = serde_json::json!(["user_account"]);
+    b_meta["terms"] = serde_json::json!(["user-profile"]);
+    fs::write(
+        spec_dir.join("a.meta.json"),
+        serde_json::to_string_pretty(&a_meta).expect("serialize a") + "\n",
+    )
+    .expect("write a");
+    fs::write(
+        spec_dir.join("b.meta.json"),
+        serde_json::to_string_pretty(&b_meta).expect("serialize b") + "\n",
+    )
+    .expect("write b");
+
+    let propose = run_foundry(
+        &root,
+        &["spec", "link", "propose", "--node", "SPC-001", "--limit", "1"],
+    );
+    assert!(propose.status.success(), "propose failed");
+
+    let a_after = fs::read_to_string(spec_dir.join("a.meta.json")).expect("read a after");
+    assert!(a_after.contains("\"to\": \"SPC-002\""), "{a_after}");
+    assert!(a_after.contains("\"status\": \"proposed\""), "{a_after}");
+    assert!(a_after.contains("\"type\": \"impacts\""), "{a_after}");
 }
